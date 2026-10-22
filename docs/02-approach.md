@@ -1,0 +1,101 @@
+# 2. Approach
+
+## Principles
+
+1. **Never lose data silently.** Every row that arrives is either loaded or quarantined with a reason.
+2. **Deterministic and replayable.** Re-running a batch, or loading an old file late, can never change the result.
+3. **Set-based only.** No row-by-row processing on the production path, which matters at billions of rows a day.
+4. **Rules have ids.** Every check produces a stable rule id (`E_*` blocking, `W_*` warning, `B_*` file/batch), so
+   issues can be counted, alerted on and traced back to a test.
+
+## How the work was done
+
+1. **Read the spec and the sample as a data engineer would in a source review.** The issues list in
+   [01-use-case-understanding.md](01-use-case-understanding.md) came first, before any code.
+2. **Designed the layers** (RAW, STG, CORE, DQ, OPS) and the table shapes, then wrote the Snowflake DDL.
+3. **Wrote each deliverable twice:** Snowflake SQL as the production path, and a small Python package (`skypoints/`)
+   implementing the same rules, so every rule could be unit-tested locally without a warehouse.
+4. **One test per rule or behaviour.** The tests run on the assessment's own sample files in `data/raw/`.
+5. **Review passes against the brief.** Each pass compared the code with the spec and the sample data, and
+   every fix landed as its own commit (see `git log`).
+
+## Key decisions
+
+| Decision | Alternative considered | Why this one |
+|---|---|---|
+| **Latest wins = record version** `(batch_ts, src_row_number)` | Latest `Last_Flight_Date` | Flight date is a business attribute, not a version: a correction can carry an older flight date. The file timestamp is the only reliable ordering. |
+| **Global registry** `MEMBER_CURRENT_COUNTRY` | Scan every country table to find a member | A point lookup per member instead of N table scans; also blocks a late old file from overwriting newer data. |
+| **Country move = delete from old + upsert into new, in one transaction** | Insert into new and clean up later | A member must never be visible in two countries at once. |
+| **RAW is all text** | Typed landing | A bad value can never fail the load; it is caught by a rule and quarantined instead. |
+| **Quarantine, don't drop** | Filter bad rows out | Rejected rows stay replayable once the source fixes them; reject rate is measurable. |
+| **Business date is a parameter** for Age / Stale | `CURRENT_DATE` | Backfills reproduce exactly. A view recomputes Age / Stale as of today for consumers. |
+| **Age = completed years** | `DATEDIFF('year')` | `DATEDIFF('year')` counts calendar boundaries and is one year too high before the birthday. |
+| **Stale is strictly > 90 days**; missing flight date = stale | `>= 90` | Follows the brief literally; a member who never flew is not active. |
+| **Header-name column mapping** | Fixed positions | The sample header already differs from the spec (no Post_Code). |
+| **Namespaced Excel IDs** (`AUS-1`) | Use IDs as-is | Same local ID in two countries would look like a country move and merge two people. |
+| **Redemption latest wins on `feed_date`** per `txn_id` | Insert every version | `PENDING` becomes `COMPLETED` in a later feed; the fact holds one current row per transaction. |
+| **Redemption join via the registry, LEFT JOIN** | INNER JOIN to profile | A redemption can arrive before its profile; it is kept and flagged as an orphan, never dropped or guessed. |
+
+## Validation catalogue
+
+### Row level: member (blocking `E_*` sends the row to quarantine)
+
+| Rule | Check |
+|---|---|
+| `E_MANDATORY_MEMBER_NAME`, `E_MANDATORY_MEMBER_ID`, `E_MANDATORY_ENROLLMENT_DATE` | Mandatory fields per spec |
+| `E_INVALID_ENROLLMENT_DATE`, `E_INVALID_FLIGHT_DATE`, `E_INVALID_DOB` | Present but not a real date (e.g. `2021-13-13`) |
+| `E_MISSING_COUNTRY`, `E_UNKNOWN_COUNTRY` | Country absent or not resolvable to an enabled country |
+| `E_LENGTH_EXCEEDED` | Longer than the spec length |
+| `E_MEMBER_ID_FORMAT` | ID contains characters outside `A-Z a-z 0-9 -` |
+| `E_FIELD_COUNT_MISMATCH` | Row has missing/extra fields (would shift columns) |
+| `E_MISSING_BATCH_TS` | File name gave no record version |
+
+### Row level: member (warning `W_*`, row still loads)
+
+`W_UNKNOWN_TIER`, `W_UNKNOWN_ACTIVE_FLAG`, `W_UNKNOWN_MEMBER_TYPE`, `W_FLIGHT_BEFORE_ENROLLMENT`,
+`W_DOB_NOT_BEFORE_ENROLLMENT`, `W_AGE_OUT_OF_RANGE`, `W_FUTURE_DATE`, `W_MISSING_DOB`, `W_MISSING_AGENT`,
+`W_INVALID_POST_CODE`
+
+### Row level: redemption
+
+`E_MANDATORY_MEMBER_ID`, `E_MANDATORY_TXN_ID`, `E_INVALID_FEED_DATE`, `E_INVALID_TXN_DATE`,
+`E_INVALID_MILES` (not a positive whole number that fits the fact), `E_UNKNOWN_STATUS`, `E_TXN_AFTER_FEED_DATE`,
+`E_LENGTH_EXCEEDED`
+
+### File and batch level
+
+| Rule | Check |
+|---|---|
+| `B_BAD_FILE_NAME` | Name does not follow the spec |
+| `B_HEADER_MISSING_FIELDS`, `B_HEADER_UNKNOWN_FIELDS` | Header drift vs the design doc |
+| `B_TRAILER_COUNT_MISMATCH` | Trailer count differs from detail rows |
+| `B_DUPLICATE_KEY` | Same member twice in one file |
+| `B_ID_COLLISION` | Same ID used by different people (name and DOB differ) |
+| `B_MEMBER_IN_MULTIPLE_COUNTRIES` | Post-load: a member in more than one country table |
+| `B_ID_LENGTH_OUTLIER`, `B_DOB_PLACEHOLDER`, `B_ALL_STALE`, `B_COUNTRY_ALIAS_USED` | Profiling aimed at the sample's anomalies |
+| `B_FIELD_DROPPED` | Values present in RAW missing in STG |
+| `B_REJECT_RATE` | Circuit breaker: more than 1% of a file rejected |
+| `B_TXN_ID_COLLISION` | Same `txn_id` under two members |
+
+## Testing strategy
+
+* `tests/test_pipeline.py` (28 tests) covers date parsing edge cases, Age and the exact 90-day boundary, every sample
+  anomaly, country moves, late replays and idempotency, Excel feeds and namespacing, JSON flattening, the
+  PENDING-to-COMPLETED flow, and overflow and collision cases.
+* CI (`.github/workflows/tests.yml`) runs the tests and the demo on Python 3.11 to 3.13 on every push, with pandas
+  deprecation warnings treated as errors.
+
+## Use of AI
+
+AI was used to draft code, tests and documentation, and as a reviewer. It was kept honest by the tests (one per rule)
+and by explicit review passes against the brief. Those passes found real defects that were then fixed in separate
+commits, for example: streams that would never advance their offset, DDL that silently committed a transaction
+mid-move, and staging columns that would crash a whole batch on a single oversized value. Design decisions (the
+version rule, the registry, quarantine over drop, namespacing) were made and checked by the engineer.
+
+## Known limitations
+
+* The SQL is written for Snowflake but has **not been executed against a Snowflake account**; the Python reference and
+  its tests do run.
+* Scheduling (Snowflake Tasks) is described in [03-architecture.md](03-architecture.md) but not scripted.
+* The assumptions listed in [01-use-case-understanding.md](01-use-case-understanding.md) need confirmation.
