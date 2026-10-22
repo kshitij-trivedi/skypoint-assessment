@@ -297,3 +297,89 @@ def test_redemption_with_source_country_joins_to_namespaced_excel_member():
     # same id without source_country is NOT guessed: it is an orphan, never a wrong match
     g2, _ = rd.stage_redemptions(parse_redemptions(JSON_DOC.replace('"223457"', '"1"'), "r2.json"))
     assert rd.enrich(g2, reg, t).is_orphan.all()
+
+
+# ---------- one test per remaining rule id ----------
+def stage_row0(**changes):
+    """Stage the sample file with the first row (Elena) changed; return that row."""
+    raw, _ = parse_flat_file(FLAT, "f", T1)
+    for col, val in changes.items():
+        raw.loc[0, col] = val
+    return stage_member(raw, AS_OF).iloc[0]
+
+@pytest.mark.parametrize("changes, rule", [
+    ({"member_id": None}, "E_MANDATORY_MEMBER_ID"),
+    ({"member_id": "2234#7"}, "E_MEMBER_ID_FORMAT"),
+    ({"country": None}, "E_MISSING_COUNTRY"),
+])
+def test_member_blocking_rules(changes, rule):
+    r = stage_row0(**changes)
+    assert r.dq_status == "REJECTED" and rule in r.dq_errors
+
+@pytest.mark.parametrize("changes, rule", [
+    ({"tier_code": "XYZ"}, "W_UNKNOWN_TIER"),
+    ({"is_active": "Z"}, "W_UNKNOWN_ACTIVE_FLAG"),
+    ({"last_flight_date": "20090101"}, "W_FLIGHT_BEFORE_ENROLLMENT"),      # enrolled 2010-10-12
+    ({"dob": "01012011"}, "W_DOB_NOT_BEFORE_ENROLLMENT"),
+    ({"dob": "01011890"}, "W_AGE_OUT_OF_RANGE"),                           # 134 on 2024-01-15
+    ({"last_flight_date": "20250101"}, "W_FUTURE_DATE"),                   # after the business date
+    ({"agent_name": None}, "W_MISSING_AGENT"),
+])
+def test_member_warning_rules_flag_but_still_load(changes, rule):
+    r = stage_row0(**changes)
+    assert r.dq_status == "VALID" and rule in r.dq_warnings
+
+@pytest.mark.parametrize("old, new, rule", [
+    ('"member_id": "223457"', '"member_id": ""', "E_MANDATORY_MEMBER_ID"),
+    ('"txn_id": "RX10091"', '"txn_id": ""', "E_MANDATORY_TXN_ID"),
+    ('"feed_date": "20240115"', '"feed_date": "2024-01-15"', "E_INVALID_FEED_DATE"),   # strict YYYYMMDD
+    ('"txn_date": "20240110"', '"txn_date": "20241310"', "E_INVALID_TXN_DATE"),
+    ('"txn_date": "20240110"', '"txn_date": "20240120"', "E_TXN_AFTER_FEED_DATE"),     # feed is 20240115
+])
+def test_redemption_blocking_rules(old, new, rule):
+    _, bad = rd.stage_redemptions(parse_redemptions(JSON_DOC.replace(old, new), "r.json"))
+    assert rule in bad.errors.iloc[0]
+
+def test_duplicate_key_in_one_file_is_reported():
+    s, _ = flat_stage(FLAT + "|D|Elena|223457|20101012|20121013|GLD|Sam|CA|USA|03051985|A\n")
+    [f] = validate.check_key_uniqueness(s)
+    assert f["rule"] == "B_DUPLICATE_KEY" and "223457 x2" in f["detail"] and "(duplicate)" in f["detail"]
+
+def test_unknown_header_field_is_reported():
+    txt = FLAT.replace("|Is_Active", "|Is_Active|Email", 1).replace("|A\n", "|A|e@x.com\n")
+    _, info = flat_stage(txt)
+    assert "B_HEADER_UNKNOWN_FIELDS" in {f["rule"] for f in validate.check_header(info)}
+
+def test_member_in_two_country_tables_is_reported():
+    t, reg = empty_state()
+    s, _ = flat_stage(); t, reg, _ = apply_batch(s, t, reg)
+    t["TABLE_INDIA"] = pd.concat([t["TABLE_INDIA"], t["TABLE_USA"]], ignore_index=True)   # Elena in both
+    [f] = validate.check_country_exclusivity(t)
+    assert f["rule"] == "B_MEMBER_IN_MULTIPLE_COUNTRIES" and f["detail"].startswith("223457")
+
+
+# ---------- dtypes, demo, coverage ----------
+def test_stage_member_returns_nullable_int_columns():
+    for s in (flat_stage()[0], stage_member(parse_excel_feed(SAMPLES / "AUS.xlsx", "AUS", T1), AS_OF)):
+        assert {c: str(s[c].dtype) for c in ("age", "days_since_flight", "post_code")} == \
+               {"age": "Int64", "days_since_flight": "Int64", "post_code": "Int64"}
+
+def test_demo_as_of_changes_derived_values(tmp_path):
+    import subprocess
+    root = pathlib.Path(__file__).resolve().parent.parent
+    subprocess.run([sys.executable, str(root / "run_demo.py"), "--as-of", "2024-03-01", "--out", str(tmp_path)],
+                   check=True, capture_output=True, cwd=root)
+    aus = pd.read_csv(tmp_path / "TABLE_AUSTRALIA.csv", dtype={"member_id": str}).set_index("member_id")
+    usa = pd.read_csv(tmp_path / "TABLE_USA.csv", dtype={"member_id": str}).set_index("member_id")
+    assert aus.loc["AUS-1", "days_since_flight"] == 578          # 2022-08-01 -> 2024-03-01 (532 on 2024-01-15)
+    assert usa.loc["223458", "days_since_flight"] == 51          # Ravi flew 2024-01-10: still not stale
+    assert not usa.loc["223458", "stale_member"]
+    assert usa.loc["223457", "age"] == 38                        # Elena turns 39 on 3 May
+
+def test_every_rule_id_in_the_code_is_referenced_by_a_test():
+    import re
+    root = pathlib.Path(__file__).resolve().parent.parent
+    rule = re.compile(r"\b[EWB]_[A-Z][A-Z_]*[A-Z]\b")
+    in_code = set().union(*(rule.findall(p.read_text()) for p in (root / "skypoints").glob("*.py")))
+    in_tests = set().union(*(rule.findall(p.read_text()) for p in (root / "tests").glob("*.py")))
+    assert in_code and not (in_code - in_tests), sorted(in_code - in_tests)

@@ -86,9 +86,13 @@ Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_
 
 ## Testing strategy
 
-* `tests/test_pipeline.py` (28 tests) covers date parsing edge cases, Age and the exact 90-day boundary, every sample
-  anomaly, country moves, late replays and idempotency, Excel feeds and namespacing, JSON flattening, the
-  PENDING-to-COMPLETED flow, and overflow and collision cases.
+* `tests/test_pipeline.py` (67 tests, counting each parametrized case) covers date parsing edge cases, Age and the
+  exact 90-day boundary, every sample anomaly, country moves, late replays and idempotency, Excel feeds and
+  namespacing, JSON flattening, the PENDING-to-COMPLETED flow, overflow and collision cases, and the demo's
+  `--as-of` option.
+* Every rule id in `skypoints/` is referenced by at least one test, and a meta-test
+  (`test_every_rule_id_in_the_code_is_referenced_by_a_test`) fails if a new rule is added without one. Per-rule
+  coverage, including the SQL-only rules that have no Python test, is in [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
 * CI (`.github/workflows/tests.yml`) runs the tests and the demo on Python 3.11 to 3.13 on every push, with pandas
   deprecation warnings treated as errors.
 

@@ -20,7 +20,7 @@ join back to the member profile, at a design scale of billions of rows a day.
 
 ```bash
 pip install -r requirements.txt
-pytest -q                                # 28 tests
+pytest -q                                # 67 tests
 python run_demo.py                       # end-to-end: reads data/raw, writes data/curated/*.csv
 python run_demo.py --as-of 2024-03-01    # different business date for Age / Stale_Member
 ```
