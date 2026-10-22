@@ -11,13 +11,14 @@ def check_header(info: dict) -> list[dict]:
                   "detail": f"{info['file_name']} does not match SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat"})
     if info["header_missing_vs_spec"]:
         f.append({"rule": "B_HEADER_MISSING_FIELDS", "severity": "WARN",
-                  "detail": f"header lacks spec fields {info['header_missing_vs_spec']}"})
+                  "detail": f"{info['file_name']}: header lacks spec fields {info['header_missing_vs_spec']}"})
     extra = [h for h in (info["header"] or []) if h not in SPEC_HEADER]
     if extra:
-        f.append({"rule": "B_HEADER_UNKNOWN_FIELDS", "severity": "WARN", "detail": f"unexpected fields {extra}"})
+        f.append({"rule": "B_HEADER_UNKNOWN_FIELDS", "severity": "WARN",
+                  "detail": f"{info['file_name']}: unexpected fields {extra}"})
     if info["trailer_count"] is not None and info["trailer_count"] != info["detail_count"]:
         f.append({"rule": "B_TRAILER_COUNT_MISMATCH", "severity": "ERROR",
-                  "detail": f"trailer={info['trailer_count']} details={info['detail_count']}"})
+                  "detail": f"{info['file_name']}: trailer={info['trailer_count']} details={info['detail_count']}"})
     return f
 
 
