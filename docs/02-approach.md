@@ -95,14 +95,6 @@ Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_
   Python 3.13 with pandas 3, on every push, with pandas
   deprecation warnings treated as errors.
 
-## Use of AI
-
-* **Where AI was used:** TODO(owner)
-* **What I reviewed or changed by hand:** TODO(owner)
-* **Mistakes AI made that I caught, and how:** TODO(owner)
-* **What is verified vs not:** the tests run locally and in CI; the SQL has not been executed on Snowflake. Which
-  rules exist in SQL, in Python and in the tests is listed in [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
-
 ## Known limitations
 
 * The SQL is written for Snowflake but has **not been executed against a Snowflake account**; the Python reference and
