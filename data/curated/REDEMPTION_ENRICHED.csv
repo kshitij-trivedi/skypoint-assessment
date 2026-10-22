@@ -1,0 +1,3 @@
+member_id,feed_date,source_country,txn_id,txn_date,partner,miles_redeemed,status,src_file_name,src_row_number,country_code,member_name,tier_code,state,is_orphan
+223457,2024-01-15,,RX10091,2024-01-10,AeroLink,12000,COMPLETED,redemptions_20240115.json,1,USA,Elena,GLD,CA,False
+223457,2024-01-16,,RX10092,2024-01-13,SkyPoints,5000,COMPLETED,redemptions_20240116.json,1,USA,Elena,GLD,CA,False

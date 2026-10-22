@@ -1,0 +1,2 @@
+member_id,feed_date,source_country,txn_id,txn_date,partner,miles_redeemed,status,src_file_name,src_row_number,errors
+223457,2024-01-16,,RX10093,2024-01-15,AeroLink,-300,DONE,redemptions_20240116.json,1,"['E_INVALID_MILES', 'E_UNKNOWN_STATUS']"

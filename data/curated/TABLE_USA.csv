@@ -1,0 +1,3 @@
+member_id,member_name,enrollment_date,last_flight_date,tier_code,agent_name,state,country_code,post_code,dob,is_active,member_type,age,days_since_flight,stale_member,batch_ts,src_file_name,src_row_number
+223457,Elena,2010-10-12,2012-10-13,GLD,Sam,CA,USA,,1985-05-03,A,,38,4111,True,2024-01-15 02:00:00,SKYPOINTS_MEMBER_20240115_020000.dat,2
+223458,Ravi,2010-10-12,2024-01-10,PLT,Sam,CA,USA,,1985-05-03,A,,38,5,False,2024-01-16 02:00:00,SKYPOINTS_MEMBER_20240116_020000.dat,2

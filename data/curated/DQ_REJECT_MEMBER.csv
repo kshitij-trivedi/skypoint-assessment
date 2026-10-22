@@ -1,0 +1,2 @@
+member_name,member_id,tier_code,agent_name,state,is_active,member_type,src_file_name,src_row_number,batch_ts,source_type,enrollment_date,last_flight_date,dob,post_code,country_raw,country_code,age,days_since_flight,stale_member,dq_status,dq_errors,dq_warnings
+Jonnathan,AUS-2,GLD,,,,,AUS.xlsx,3,2024-01-15 03:00:00,excel,,2022-01-05,1997-12-13,,AUS,AUS,26,740,True,REJECTED,['E_INVALID_ENROLLMENT_DATE'],['W_MISSING_AGENT']

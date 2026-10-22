@@ -1,0 +1,4 @@
+member_id,member_name,enrollment_date,last_flight_date,tier_code,agent_name,state,country_code,post_code,dob,is_active,member_type,age,days_since_flight,stale_member,batch_ts,src_file_name,src_row_number
+IND-1,Vikas,2022-01-01,2022-06-15,SLV,,,IND,,1998-12-01,,I,25,579,True,2024-01-15 03:00:00,IND.xlsx,2
+IND-2,Rahul,2022-03-05,2022-03-10,GLD,,,IND,,1982-08-13,,C,41,676,True,2024-01-15 03:00:00,IND.xlsx,3
+IND-3,Sameer,2022-02-20,2022-02-25,GLD,,,IND,,1952-08-13,,I,71,689,True,2024-01-15 03:00:00,IND.xlsx,4

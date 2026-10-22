@@ -56,6 +56,8 @@ the per-country tables, a redemption going from PENDING to COMPLETED, a rejected
 ├── data/
 │   ├── raw/                      input: assessment sample feeds (flat files, JSON, Excel)
 │   └── curated/                  output of run_demo.py: country tables, enriched redemptions, rejects
+│                                 (committed as sample output so results are visible without running;
+│                                  run_demo.py regenerates it)
 ├── run_demo.py                   live demo
 └── .github/workflows/tests.yml   CI: tests + demo on every push
 ```

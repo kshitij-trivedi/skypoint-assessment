@@ -1,0 +1,4 @@
+member_id,member_name,enrollment_date,last_flight_date,tier_code,agent_name,state,country_code,post_code,dob,is_active,member_type,age,days_since_flight,stale_member,batch_ts,src_file_name,src_row_number
+2256,Jacob,2010-10-12,2012-10-13,SLV,Sam,VIC,AUS,,1985-05-03,A,,38,4111,True,2024-01-15 02:00:00,SKYPOINTS_MEMBER_20240115_020000.dat,6
+AUS-1,Mike,2022-05-11,2022-08-01,PLT,,,AUS,,,,,,532,True,2024-01-15 03:00:00,AUS.xlsx,2
+AUS-3,Cristina,2022-03-12,2022-03-20,SLV,,,AUS,,1998-03-12,,,25,666,True,2024-01-15 03:00:00,AUS.xlsx,4
