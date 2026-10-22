@@ -20,6 +20,8 @@ MAX_LEN = {"member_name": 255, "member_id": 18, "tier_code": 5, "agent_name": 25
            "country": 5, "is_active": 1, "member_type": 1}
 REDEMPTION_MAX_LEN = {"member_id": 18, "txn_id": 50, "partner": 100}
 MAX_MILES = 10**12          # FACT_REDEMPTION.miles_redeemed is NUMBER(12,0)
+# Positive whole number of at most 12 digits, no sign, no leading zero, no decimal point. Same text in sql/04.
+MILES_PATTERN = r"[1-9][0-9]{0,11}"
 
 RAW_COLS = ["member_name", "member_id", "enrollment_date", "last_flight_date", "tier_code", "agent_name",
             "state", "country", "post_code", "dob", "is_active", "member_type"]

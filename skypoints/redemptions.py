@@ -1,7 +1,8 @@
 """Flattened redemption feed: validation, latest-feed-wins per txn_id, join-back to members (mirrors sql/04)."""
 from __future__ import annotations
+import re
 import pandas as pd
-from .config import REDEMPTION_STATUSES, REDEMPTION_MAX_LEN, MAX_MILES
+from .config import REDEMPTION_STATUSES, REDEMPTION_MAX_LEN, MAX_MILES, MILES_PATTERN
 from .dates import parse_date
 
 
@@ -11,10 +12,10 @@ def stage_redemptions(flat: pd.DataFrame):
         r = {k: (None if pd.isna(v) else v) for k, v in r.items()}   # NaN is truthy
         e = []
         txn_d, s1 = parse_date(r["txn_date"]); feed_d, s2 = parse_date(r["feed_date"])
-        try:
-            miles = int(str(r["miles_redeemed"]).strip())
-        except (ValueError, TypeError):
-            miles = None
+        # Checked on the text, not a parsed number: '12.0', '12.5', '012', '+12' and 13+ digits all fail.
+        # sql/04 applies the same regex to the raw JSON text (see MILES_PATTERN).
+        raw_miles = str(r["miles_redeemed"]).strip() if r["miles_redeemed"] is not None else ""
+        miles = int(raw_miles) if re.fullmatch(MILES_PATTERN, raw_miles) else None
         if not r["member_id"]: e.append("E_MANDATORY_MEMBER_ID")
         if not r["txn_id"]: e.append("E_MANDATORY_TXN_ID")
         if s2 != "ok": e.append("E_INVALID_FEED_DATE")
@@ -28,7 +29,8 @@ def stage_redemptions(flat: pd.DataFrame):
         if any(keyed.get(c) and len(str(keyed[c])) > n for c, n in REDEMPTION_MAX_LEN.items()): e.append("E_LENGTH_EXCEEDED")
         row = {**r, "member_id": member_key, "txn_date": txn_d, "feed_date": feed_d, "miles_redeemed": miles,
                "status": (r["status"] or "").upper()}
-        (bad if e else good).append({**row, "errors": e} if e else row)
+        # quarantine keeps the value as received, so the row can be replayed after a source fix
+        (bad if e else good).append({**row, "miles_redeemed": r["miles_redeemed"], "errors": e} if e else row)
     cols = list(flat.columns)
     return pd.DataFrame(good, columns=cols), pd.DataFrame(bad, columns=cols + ["errors"])
 

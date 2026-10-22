@@ -6,10 +6,11 @@ NULL_TOKENS = {"", "NULL", "NONE", "NAN", "NAT", "N/A"}
 EXCEL_EPOCH = date(1899, 12, 30)
 
 
-def parse_date(value, fmt: str = "YYYYMMDD"):
+def parse_date(value, fmt: str = "YYYYMMDD", lenient: bool = False):
     """Return (date|None, status) where status in ok | null | invalid.
     fmt applies to compact digit strings: YYYYMMDD or DDMMYYYY (zero-padded if the leading 0 was lost).
-    Always accepted: ISO yyyy-mm-dd[ hh:mm:ss] and Excel serial numbers (5 digits)."""
+    Strict by default, like sql/02 (TRY_TO_DATE with the spec format). lenient=True is for the Excel adapter only
+    (like OPS.FN_XL_DATE_*): it also accepts ISO yyyy-mm-dd[ hh:mm:ss] and Excel serial numbers (5 digits)."""
     if value is None:
         return None, "null"
     if isinstance(value, datetime):
@@ -20,13 +21,14 @@ def parse_date(value, fmt: str = "YYYYMMDD"):
     if s.upper() in NULL_TOKENS:
         return None, "null"
     try:
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            return datetime.strptime(s[:10], "%Y-%m-%d").date(), "ok"
-        if s.endswith(".0"):
-            s = s[:-2]
-        if s.isdigit():
-            if len(s) == 5:                                    # Excel serial
+        if lenient:
+            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+                return datetime.strptime(s[:10], "%Y-%m-%d").date(), "ok"
+            if s.endswith(".0"):
+                s = s[:-2]
+            if s.isdigit() and len(s) == 5:                    # Excel serial
                 return EXCEL_EPOCH + timedelta(days=int(s)), "ok"
+        if s.isdigit():
             if fmt == "DDMMYYYY" and 7 <= len(s) <= 8:
                 return datetime.strptime(s.zfill(8), "%d%m%Y").date(), "ok"
             if fmt == "YYYYMMDD" and len(s) == 8:

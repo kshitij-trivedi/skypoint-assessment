@@ -93,7 +93,10 @@ def check_redemption_keys(staged: pd.DataFrame) -> list[dict]:
 
 
 def check_country_exclusivity(targets: dict[str, pd.DataFrame]) -> list[dict]:
-    allm = pd.concat([t[["member_id"]].assign(t=n) for n, t in targets.items() if len(t)], ignore_index=True)
+    loaded = [t[["member_id"]].assign(t=n) for n, t in targets.items() if len(t)]
+    if not loaded:
+        return []
+    allm = pd.concat(loaded, ignore_index=True)
     dup = allm[allm.duplicated("member_id", keep=False)]
     return [{"rule": "B_MEMBER_IN_MULTIPLE_COUNTRIES", "severity": "ERROR", "detail": f"{m}: {sorted(g.t)}"}
             for m, g in dup.groupby("member_id")]

@@ -21,7 +21,9 @@ def flat_stage(text=FLAT, ts=T1, name="f1.dat"):
 # ---------- dates / derived columns ----------
 def test_date_parsing_kinds():
     assert parse_date("20101012") == (date(2010, 10, 12), "ok")
-    assert parse_date("44562") == (date(2022, 1, 1), "ok")                 # Excel serial
+    assert parse_date("44562", lenient=True) == (date(2022, 1, 1), "ok")   # Excel serial: Excel adapter only
+    assert parse_date("2022-01-01 00:00:00", lenient=True) == (date(2022, 1, 1), "ok")
+    assert parse_date("44562")[1] == "invalid" and parse_date("2022-01-01")[1] == "invalid"   # strict = spec only
     assert parse_date("2021-13-13")[1] == "invalid"                         # impossible month
     assert parse_date("NULL")[1] == "null" and parse_date(None)[1] == "null"
     assert parse_date("3051985", "DDMMYYYY") == (date(1985, 5, 3), "ok")    # lost leading zero
@@ -55,6 +57,29 @@ def test_ragged_row_is_rejected_not_shifted():
     s, _ = flat_stage(ragged)
     assert "E_FIELD_COUNT_MISMATCH" in s[s.member_name == "Ravi"].dq_errors.iloc[0]
     assert s[s.member_name == "Ravi"].dq_status.iloc[0] == "REJECTED"
+
+def test_blank_last_field_is_not_mistaken_for_a_trailing_delimiter():
+    s, _ = flat_stage(FLAT + "|D|Zed|900001|20200101|20230101|GLD|Sam|CA|USA|03051985|\n")
+    z = s[s.member_id == "900001"].iloc[0]
+    assert z.dq_status == "VALID" and z.dq_errors == [] and z.is_active is None
+
+def test_trailing_pipe_on_a_full_row_is_a_delimiter():
+    s, _ = flat_stage(FLAT + "|D|Zed|900001|20200101|20230101|GLD|Sam|CA|USA|03051985|A|\n")
+    z = s[s.member_id == "900001"].iloc[0]
+    assert z.dq_status == "VALID" and z.is_active == "A"
+
+def test_genuinely_short_row_is_still_rejected():
+    s, _ = flat_stage(FLAT + "|D|Zed|900001|20200101|20230101|GLD|Sam|CA|USA\n")
+    assert "E_FIELD_COUNT_MISMATCH" in s[s.member_id == "900001"].dq_errors.iloc[0]
+
+def test_flat_file_dates_accept_only_the_spec_formats():
+    for col, val, rule in [("enrollment_date", "44562", "E_INVALID_ENROLLMENT_DATE"),
+                           ("enrollment_date", "2022-01-01", "E_INVALID_ENROLLMENT_DATE"),
+                           ("last_flight_date", "2022-01-01", "E_INVALID_FLIGHT_DATE"),
+                           ("dob", "1985-05-03", "E_INVALID_DOB")]:
+        raw, _ = parse_flat_file(FLAT, "f", T1)
+        raw.loc[0, col] = val
+        assert rule in stage_member(raw, AS_OF).dq_errors[0], (col, val)
 
 def test_mandatory_and_unknown_country_rejected():
     bad = FLAT + "|D||999|20200101||GLD|Sam|X|ZZZ|01011990|A\n|D|NoEnroll|998||20200101|GLD|Sam|X|IND|01011990|A\n"
@@ -112,6 +137,10 @@ def test_member_moves_country_across_batches():
     assert len(t["TABLE_INDIA"]) == 0 and "223458" in set(t["TABLE_USA"].member_id)
     assert validate.check_country_exclusivity(t) == []
     assert reg.set_index("member_id").loc["223458", "country_code"] == "USA"
+
+def test_country_exclusivity_on_empty_targets_is_a_pass_not_a_crash():
+    t, _ = empty_state()
+    assert validate.check_country_exclusivity(t) == []
 
 def test_old_file_replayed_late_cannot_overwrite_and_rerun_is_idempotent():
     t, reg = empty_state()
@@ -176,6 +205,17 @@ def test_redemption_values_that_would_overflow_the_fact_are_quarantined():
     good, bad = rd.stage_redemptions(parse_redemptions(doc, "r.json"))
     assert good.empty
     assert [e for e in bad.errors] == [["E_INVALID_MILES"], ["E_LENGTH_EXCEEDED"]]
+
+@pytest.mark.parametrize("miles", ["12.0", "12.5", "12.001", "-5", "0", "1000000000000", '"012"', '"+12"', "true"])
+def test_miles_must_be_a_positive_whole_number_written_as_one(miles):
+    doc = JSON_DOC.replace('"miles_redeemed": 12000', f'"miles_redeemed": {miles}')
+    _, bad = rd.stage_redemptions(parse_redemptions(doc, "r.json"))
+    assert bad.errors.tolist() == [["E_INVALID_MILES"]]
+
+def test_largest_miles_value_that_fits_the_fact_is_accepted():
+    doc = JSON_DOC.replace('"miles_redeemed": 12000', '"miles_redeemed": 999999999999')
+    good, bad = rd.stage_redemptions(parse_redemptions(doc, "r.json"))
+    assert bad.empty and 999999999999 in set(good.miles_redeemed)
 
 def test_txn_id_reused_by_another_member_is_flagged():
     other = JSON_DOC.replace('"member_id": "223457"', '"member_id": "223458"')
