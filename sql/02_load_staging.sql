@@ -130,5 +130,11 @@ BEGIN
                                           'business_date', :P_BUSINESS_DATE::STRING);
   COMMIT;
   RETURN OBJECT_CONSTRUCT('rows', v_rows, 'valid', v_valid, 'rejected', v_rejected);
+EXCEPTION
+  -- Any failure: undo everything this call did (ROLLBACK is a no-op if no transaction is open), then re-raise
+  -- so the caller / task sees the error. The stream offset is not advanced by a rolled-back transaction.
+  WHEN OTHER THEN
+    ROLLBACK;
+    RAISE;
 END;
 $$;

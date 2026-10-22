@@ -79,6 +79,12 @@ BEGIN
   INSERT INTO OPS.PIPELINE_RUN_LOG (step, metrics) SELECT 'normalise_excel', OBJECT_CONSTRUCT('aus', :v_aus, 'ind', :v_ind);
   COMMIT;
   RETURN OBJECT_CONSTRUCT('aus', v_aus, 'ind', v_ind);
+EXCEPTION
+  -- Any failure: undo everything this call did (ROLLBACK is a no-op if no transaction is open), then re-raise
+  -- so the caller / task sees the error. The stream offset is not advanced by a rolled-back transaction.
+  WHEN OTHER THEN
+    ROLLBACK;
+    RAISE;
 END;
 $$;
 -- Onboarding another country feed = one more RAW_XL_<CC> table + one INSERT block with its column mapping.

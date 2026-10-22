@@ -110,6 +110,12 @@ BEGIN
                                              'batch_from', :v_from::STRING);
   COMMIT;
   RETURN OBJECT_CONSTRUCT('candidates', v_candidates, 'applied', v_applied, 'moved_country', v_moved);
+EXCEPTION
+  -- Any failure: undo everything this call did (ROLLBACK is a no-op if no transaction is open), then re-raise
+  -- so the caller / task sees the error. The stream offset is not advanced by a rolled-back transaction.
+  WHEN OTHER THEN
+    ROLLBACK;
+    RAISE;
 END;
 $$;
 

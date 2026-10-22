@@ -90,6 +90,12 @@ BEGIN
   INSERT INTO OPS.PIPELINE_RUN_LOG (step, metrics) SELECT 'redemptions', OBJECT_CONSTRUCT('txns', :v_in, 'loaded', :v_ok, 'rejected', :v_bad);
   COMMIT;
   RETURN OBJECT_CONSTRUCT('txns', v_in, 'loaded', v_ok, 'rejected', v_bad);
+EXCEPTION
+  -- Any failure: undo everything this call did (ROLLBACK is a no-op if no transaction is open), then re-raise
+  -- so the caller / task sees the error. The stream offset is not advanced by a rolled-back transaction.
+  WHEN OTHER THEN
+    ROLLBACK;
+    RAISE;
 END;
 $$;
 
