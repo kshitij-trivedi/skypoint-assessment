@@ -230,7 +230,7 @@ CREATE TABLE IF NOT EXISTS STG.STG_REDEMPTION (
   txn_id          VARCHAR,
   txn_date        DATE,
   partner         VARCHAR,
-  miles_redeemed  NUMBER(38,2),
+  miles_redeemed  NUMBER(12,0),              -- NULL when invalid (E_INVALID_MILES); the raw text stays in DQ
   status          VARCHAR,
   errors          ARRAY,                     -- empty = valid
   src_file_name   VARCHAR,

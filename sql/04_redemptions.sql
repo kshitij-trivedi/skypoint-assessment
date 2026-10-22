@@ -31,7 +31,13 @@ BEGIN
     TRY_TO_DATE(f.value:txn_date::STRING, 'YYYYMMDD')                     AS txn_date,
     f.value:txn_date::STRING                                              AS raw_txn_date,
     f.value:partner::STRING                                               AS partner,
-    TRY_TO_NUMBER(f.value:miles_redeemed::STRING, 38, 2)                  AS miles_redeemed,   -- scale 2: 12.5 must fail, not round
+    -- Checked on the text, then cast: a positive whole number of at most 12 digits with no sign, leading zero or
+    -- decimal point. Rejects 12.0, 12.5, 12.001, -5, 0, 012 and 1000000000000, exactly like skypoints MILES_PATTERN.
+    -- (TRY_TO_NUMBER(..., 38, 2) rounded 12.001 to 12.00 and accepted 12.0.)
+    -- Not verified on Snowflake: how VARIANT renders a JSON 12.0 as STRING. If it renders '12', that value would be
+    -- accepted here while Python rejects it; check with SELECT PARSE_JSON('{"m":12.0}'):m::STRING.
+    IFF(REGEXP_LIKE(TRIM(f.value:miles_redeemed::STRING), '[1-9][0-9]{0,11}'),
+        TRIM(f.value:miles_redeemed::STRING)::NUMBER(12,0), NULL)          AS miles_redeemed,
     f.value:miles_redeemed::STRING                                        AS raw_miles,
     UPPER(f.value:status::STRING)                                         AS status,
     r.src_file_name, r.src_row_number, r.payload AS payload, f.value AS txn
@@ -44,8 +50,7 @@ BEGIN
       IFF(txn_id IS NULL,                                                 'E_MANDATORY_TXN_ID', NULL),
       IFF(raw_feed_date IS NOT NULL AND feed_date IS NULL OR raw_feed_date IS NULL, 'E_INVALID_FEED_DATE', NULL),
       IFF(raw_txn_date IS NOT NULL AND txn_date IS NULL,                  'E_INVALID_TXN_DATE', NULL),
-      IFF(miles_redeemed IS NULL OR miles_redeemed <= 0 OR miles_redeemed <> FLOOR(miles_redeemed)
-          OR miles_redeemed >= 1e12,                                      'E_INVALID_MILES', NULL),   -- fact is NUMBER(12,0)
+      IFF(miles_redeemed IS NULL,                                         'E_INVALID_MILES', NULL),   -- fact is NUMBER(12,0)
       IFF(LENGTH(member_id) > 18 OR LENGTH(txn_id) > 50 OR LENGTH(partner) > 100, 'E_LENGTH_EXCEEDED', NULL),
       IFF(status IS NULL OR status NOT IN ('COMPLETED','PENDING','CANCELLED','REVERSED'), 'E_UNKNOWN_STATUS', NULL),
       IFF(txn_date > feed_date,                                           'E_TXN_AFTER_FEED_DATE', NULL)
