@@ -244,6 +244,13 @@ CREATE TABLE IF NOT EXISTS DQ.DQ_REJECT_REDEMPTION (
   payload VARIANT, txn VARIANT, error_codes ARRAY, src_file_name VARCHAR, src_row_number NUMBER,
   rejected_ts TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP());
 
+-- What each incremental step has already processed. SP_LOAD_COUNTRY_TABLES reads STG rows from last_batch_ts on
+-- and advances it in the same transaction as its MERGEs, so a skipped or failed run cannot strand rows.
+CREATE TABLE IF NOT EXISTS OPS.PIPELINE_WATERMARK (
+  pipeline_name  VARCHAR PRIMARY KEY,
+  last_batch_ts  TIMESTAMP_NTZ NOT NULL,
+  updated_ts     TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP());
+
 -- Run log for observability / reconciliation
 CREATE TABLE IF NOT EXISTS OPS.PIPELINE_RUN_LOG (
   run_id VARCHAR DEFAULT UUID_STRING(), step VARCHAR, metrics VARIANT,

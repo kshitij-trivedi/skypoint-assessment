@@ -27,23 +27,31 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE PROCEDURE OPS.SP_LOAD_COUNTRY_TABLES(P_BATCH_FROM TIMESTAMP_NTZ)
+-- Window: by default from the stored watermark (OPS.PIPELINE_WATERMARK), so nothing depends on the caller passing
+-- the right value and a skipped run is picked up by the next one. P_BATCH_FROM overrides it for backfills.
+-- The window is inclusive (>=): the last batch is re-read on the next run, which is a no-op (version check + MERGE).
+-- Limitation: a file whose batch_ts is OLDER than the watermark but arrives late is outside the default window;
+-- it needs a backfill call with P_BATCH_FROM. (For members already loaded it could not win anyway; brand-new
+-- members in it would wait for that backfill.)
+CREATE OR REPLACE PROCEDURE OPS.SP_LOAD_COUNTRY_TABLES(P_BATCH_FROM TIMESTAMP_NTZ DEFAULT NULL)
 RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
 DECLARE
   c CURSOR FOR SELECT country_code, target_table FROM CORE.REF_COUNTRY WHERE is_enabled;
-  v_candidates NUMBER; v_applied NUMBER; v_moved NUMBER;
+  v_candidates NUMBER; v_applied NUMBER; v_moved NUMBER; v_from TIMESTAMP_NTZ;
 BEGIN
   CALL OPS.SP_ENSURE_COUNTRY_TABLES();
+  SELECT COALESCE(:P_BATCH_FROM, MAX(last_batch_ts), '1900-01-01'::TIMESTAMP_NTZ) INTO :v_from
+    FROM OPS.PIPELINE_WATERMARK WHERE pipeline_name = 'country_split';
   -- Work tables are built BEFORE the transaction: DDL inside BEGIN..COMMIT implicitly commits, which would make
   -- the delete-from-old-country / upsert-into-new-country pair non-atomic.
 
   -- (a) newest record per member inside the unprocessed window
   CREATE OR REPLACE TEMPORARY TABLE STG.TMP_LATEST AS
     SELECT * FROM STG.STG_MEMBER
-    WHERE dq_status = 'VALID' AND batch_ts >= :P_BATCH_FROM
+    WHERE dq_status = 'VALID' AND batch_ts >= :v_from
     QUALIFY ROW_NUMBER() OVER (PARTITION BY member_id ORDER BY batch_ts DESC, src_row_number DESC) = 1;
 
   -- (b) keep only records newer than (or equal to, for idempotent replay) the version already applied
@@ -86,10 +94,20 @@ BEGIN
   WHEN NOT MATCHED THEN INSERT (member_id, country_code, source_batch_ts, source_row_number)
                         VALUES (a.member_id, a.country_code, a.batch_ts, a.src_row_number);
 
+  -- Advance the watermark only now, inside the same transaction as the MERGEs: if anything above fails, the
+  -- rollback leaves it where it was and the next run re-reads the same window. It never moves backwards, so a
+  -- backfill with an old P_BATCH_FROM does not rewind it.
+  MERGE INTO OPS.PIPELINE_WATERMARK w
+  USING (SELECT 'country_split' AS pipeline_name, MAX(batch_ts) AS max_ts FROM STG.TMP_LATEST) s
+  ON w.pipeline_name = s.pipeline_name
+  WHEN MATCHED AND s.max_ts > w.last_batch_ts THEN UPDATE SET last_batch_ts = s.max_ts, updated_ts = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED AND s.max_ts IS NOT NULL THEN INSERT (pipeline_name, last_batch_ts) VALUES (s.pipeline_name, s.max_ts);
+
   SELECT (SELECT COUNT(*) FROM STG.TMP_LATEST), COUNT(*), COUNT_IF(prev_country IS NOT NULL AND prev_country <> country_code)
     INTO :v_candidates, :v_applied, :v_moved FROM STG.TMP_APPLY;
   INSERT INTO OPS.PIPELINE_RUN_LOG (step, metrics)
-    SELECT 'country_split', OBJECT_CONSTRUCT('candidates', :v_candidates, 'applied', :v_applied, 'moved_country', :v_moved);
+    SELECT 'country_split', OBJECT_CONSTRUCT('candidates', :v_candidates, 'applied', :v_applied, 'moved_country', :v_moved,
+                                             'batch_from', :v_from::STRING);
   COMMIT;
   RETURN OBJECT_CONSTRUCT('candidates', v_candidates, 'applied', v_applied, 'moved_country', v_moved);
 END;

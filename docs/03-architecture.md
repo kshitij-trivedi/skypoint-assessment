@@ -67,7 +67,7 @@ flowchart LR
 | 1 | `COPY INTO` / Snowpipe | Load new files into RAW (load history prevents loading the same file twice) |
 | 2 | `CALL OPS.SP_NORMALISE_EXCEL_FEEDS()` | Map each Excel layout into the canonical RAW layout; namespace IDs |
 | 3 | `CALL OPS.SP_LOAD_STG_MEMBER(<business_date>)` | RAW stream to STG: type, Age, Stale_Member, rules; rejects copied to DQ |
-| 4 | `CALL OPS.SP_LOAD_COUNTRY_TABLES(<batch_from>)` | Latest record wins into the country tables and the registry |
+| 4 | `CALL OPS.SP_LOAD_COUNTRY_TABLES()` | Latest record wins into the country tables and the registry, from the stored watermark (`OPS.PIPELINE_WATERMARK`); pass a timestamp only to backfill |
 | 5 | `CALL OPS.SP_LOAD_REDEMPTIONS()` | JSON stream flattened into STG_REDEMPTION, then MERGE into the fact |
 | 6 | `05_validations.sql` | File/batch checks; each query returns rows only when something is wrong |
 
