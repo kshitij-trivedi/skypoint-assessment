@@ -71,7 +71,15 @@ BEGIN
       IFF(e.country_raw IS NULL,                                        'E_MISSING_COUNTRY', NULL),
       IFF(e.country_raw IS NOT NULL AND (e.country_code IS NULL OR NOT COALESCE(e.country_enabled,FALSE)),
                                                                         'E_UNKNOWN_COUNTRY', NULL),
+      -- Every bounded column of CORE.MEMBER_TEMPLATE / MEMBER_CURRENT_COUNTRY must be covered here, otherwise one
+      -- oversized VALID value fails the MERGE in SP_LOAD_COUNTRY_TABLES for the whole batch:
+      --   member_id VARCHAR(18), member_name VARCHAR(255), tier_code VARCHAR(5), agent_name VARCHAR(255),
+      --   state VARCHAR(5), is_active VARCHAR(1), member_type VARCHAR(1)      -> checked below
+      --   country_code VARCHAR(3)  -> only ever a REF_COUNTRY_ALIAS value (unknown => E_UNKNOWN_COUNTRY)
+      --   post_code NUMBER(5,0)    -> regex [0-9]{1,5} above, anything else is NULL + W_INVALID_POST_CODE
+      --   country_raw (spec 5) is not stored in CORE but is checked for spec parity with skypoints/config.py MAX_LEN
       IFF(LENGTH(e.member_name) > 255 OR LENGTH(e.member_id) > 18 OR LENGTH(e.tier_code) > 5
+          OR LENGTH(e.agent_name) > 255
           OR LENGTH(e.state) > 5 OR LENGTH(e.country_raw) > 5 OR LENGTH(e.is_active) > 1 OR LENGTH(e.member_type) > 1,
                                                                         'E_LENGTH_EXCEEDED', NULL),
       IFF(e.member_id IS NOT NULL AND NOT REGEXP_LIKE(e.member_id,'[A-Za-z0-9-]+'), 'E_MEMBER_ID_FORMAT', NULL),
