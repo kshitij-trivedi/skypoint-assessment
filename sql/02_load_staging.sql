@@ -4,7 +4,11 @@
 --   SET BUSINESS_DATE = '2024-01-15'::DATE;
 -- Exactly-once: the stream offset only advances when a DML statement reads it and the transaction commits,
 -- so the stream is read by the INSERT itself (a CTAS/temp table would NOT consume it, and DDL inside an
--- explicit transaction implicitly commits it). Rejects are copied from this run's STG rows in the same txn.
+-- explicit transaction implicitly commits it). One multi-table INSERT writes STG and the quarantine in a single
+-- pass, so this run's rows are never read back from STG (stg_load_ts is not the clustering key).
+-- Read inside-out: p = parsed from the stream, e = enriched with reference data and derived columns,
+-- typed = rule outcomes. (Subqueries instead of a WITH clause: the multi-table INSERT documentation shows a
+-- plain subquery.)
 -- =====================================================================
 CREATE OR REPLACE PROCEDURE OPS.SP_LOAD_STG_MEMBER(P_BUSINESS_DATE DATE)
 RETURNS VARIANT
@@ -13,50 +17,29 @@ AS
 $$
 DECLARE
   v_rows NUMBER; v_valid NUMBER; v_rejected NUMBER;
-  v_run_ts TIMESTAMP_NTZ;
 BEGIN
-  v_run_ts := CURRENT_TIMESTAMP()::TIMESTAMP_NTZ;
   BEGIN TRANSACTION;
 
-  INSERT INTO STG.STG_MEMBER
-    (member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code, post_code, member_type,
-     dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name, src_row_number, dq_status, dq_errors, dq_warnings, stg_load_ts)
-  WITH parsed AS (
-    SELECT
-      NULLIF(TRIM(r.member_name),'')                                   AS member_name,
-      NULLIF(TRIM(r.member_id),'')                                     AS member_id,
-      TRY_TO_DATE(NULLIF(TRIM(r.enrollment_date),''),  'YYYYMMDD')     AS enrollment_date,
-      TRY_TO_DATE(NULLIF(TRIM(r.last_flight_date),''), 'YYYYMMDD')     AS last_flight_date,
-      -- DOB arrives DDMMYYYY and the staging extract lost the leading zero (3051985) => LPAD first.
-      -- !! DDMMYYYY vs MMDDYYYY must be confirmed with the source design doc.
-      TRY_TO_DATE(LPAD(NULLIF(TRIM(r.dob),''),8,'0'),  'DDMMYYYY')     AS dob,
-      UPPER(NULLIF(TRIM(r.tier_code),''))                              AS tier_code,
-      NULLIF(TRIM(r.agent_name),'')                                    AS agent_name,
-      UPPER(NULLIF(TRIM(r.state),''))                                  AS state,
-      UPPER(NULLIF(TRIM(r.country),''))                                AS country_raw,
-      UPPER(NULLIF(TRIM(r.is_active),''))                              AS is_active,
-      UPPER(NULLIF(TRIM(r.member_type),''))                            AS member_type,
-      -- spec: INT, 5 digits. Anything else becomes NULL + warning (non-mandatory field)
-      IFF(REGEXP_LIKE(TRIM(r.post_code),'[0-9]{1,5}'), TRIM(r.post_code)::NUMBER, NULL) AS post_code,
-      NULLIF(TRIM(r.post_code),'') AS raw_post_code,
-      r.enrollment_date AS raw_enroll, r.last_flight_date AS raw_flight, r.dob AS raw_dob,
-      r.field_count_ok, r.batch_ts, r.src_file_name, r.src_row_number
-    FROM RAW.STRM_MEMBER_FEED r
-    WHERE r.rec_type = 'D'
-  ),
-  enriched AS (
-    SELECT p.*, a.country_code, c.is_enabled AS country_enabled, t.tier_code AS known_tier,
-      -- completed years (DATEDIFF('year') counts calendar boundaries, so correct for not-yet-had birthday)
-      IFF(p.dob IS NULL, NULL,
-          DATEDIFF('year', p.dob, :P_BUSINESS_DATE)
-          - IFF(DATEADD('year', DATEDIFF('year', p.dob, :P_BUSINESS_DATE), p.dob) > :P_BUSINESS_DATE, 1, 0)) AS age,
-      DATEDIFF('day', p.last_flight_date, :P_BUSINESS_DATE)                                                  AS days_since_flight
-    FROM parsed p
-    LEFT JOIN CORE.REF_COUNTRY_ALIAS a ON a.alias = p.country_raw
-    LEFT JOIN CORE.REF_COUNTRY c       ON c.country_code = a.country_code
-    LEFT JOIN CORE.REF_TIER t          ON t.tier_code = p.tier_code
-  ),
-  typed AS (
+  INSERT ALL
+    WHEN 1 = 1 THEN INTO STG.STG_MEMBER
+      (member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code,
+       post_code, member_type, dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name,
+       src_row_number, dq_status, dq_errors, dq_warnings)
+      VALUES (member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code,
+       post_code, member_type, dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name,
+       src_row_number, dq_status, dq_errors, dq_warnings)
+    -- Bad rows -> quarantine as well (nothing is silently dropped). Same shape: DQ_REJECT_MEMBER is LIKE STG_MEMBER.
+    WHEN dq_status = 'REJECTED' THEN INTO DQ.DQ_REJECT_MEMBER
+      (member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code,
+       post_code, member_type, dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name,
+       src_row_number, dq_status, dq_errors, dq_warnings)
+      VALUES (member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code,
+       post_code, member_type, dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name,
+       src_row_number, dq_status, dq_errors, dq_warnings)
+  SELECT member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code,
+         post_code, member_type, dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name,
+         src_row_number, IFF(ARRAY_SIZE(dq_errors) = 0, 'VALID', 'REJECTED') AS dq_status, dq_errors, dq_warnings
+  FROM (
   SELECT e.*,
     -- stale = more than 90 days since last flight; NULL flight date => treated as stale (never flown / unknown)
     COALESCE(e.days_since_flight > 90, TRUE) AS stale_member,
@@ -101,19 +84,46 @@ BEGIN
       IFF(e.agent_name IS NULL,                                       'W_MISSING_AGENT', NULL),
       IFF(e.raw_post_code IS NOT NULL AND e.post_code IS NULL,        'W_INVALID_POST_CODE', NULL)
     ) AS dq_warnings
-  FROM enriched e
-  )
-  SELECT member_name, member_id, enrollment_date, last_flight_date, tier_code, agent_name, state, country_raw, country_code, post_code, member_type,
-         dob, is_active, age, days_since_flight, stale_member, batch_ts, src_file_name, src_row_number,
-         IFF(ARRAY_SIZE(dq_errors) = 0, 'VALID', 'REJECTED'), dq_errors, dq_warnings, :v_run_ts
-  FROM typed;
+  FROM (
+    SELECT p.*, a.country_code, c.is_enabled AS country_enabled, t.tier_code AS known_tier,
+      -- completed years (DATEDIFF('year') counts calendar boundaries, so correct for not-yet-had birthday)
+      IFF(p.dob IS NULL, NULL,
+          DATEDIFF('year', p.dob, :P_BUSINESS_DATE)
+          - IFF(DATEADD('year', DATEDIFF('year', p.dob, :P_BUSINESS_DATE), p.dob) > :P_BUSINESS_DATE, 1, 0)) AS age,
+      DATEDIFF('day', p.last_flight_date, :P_BUSINESS_DATE)                                                  AS days_since_flight
+    FROM (
+      SELECT
+        NULLIF(TRIM(r.member_name),'')                                   AS member_name,
+        NULLIF(TRIM(r.member_id),'')                                     AS member_id,
+        TRY_TO_DATE(NULLIF(TRIM(r.enrollment_date),''),  'YYYYMMDD')     AS enrollment_date,
+        TRY_TO_DATE(NULLIF(TRIM(r.last_flight_date),''), 'YYYYMMDD')     AS last_flight_date,
+        -- DOB arrives DDMMYYYY and the staging extract lost the leading zero (3051985) => LPAD first.
+        -- !! DDMMYYYY vs MMDDYYYY must be confirmed with the source design doc.
+        TRY_TO_DATE(LPAD(NULLIF(TRIM(r.dob),''),8,'0'),  'DDMMYYYY')     AS dob,
+        UPPER(NULLIF(TRIM(r.tier_code),''))                              AS tier_code,
+        NULLIF(TRIM(r.agent_name),'')                                    AS agent_name,
+        UPPER(NULLIF(TRIM(r.state),''))                                  AS state,
+        UPPER(NULLIF(TRIM(r.country),''))                                AS country_raw,
+        UPPER(NULLIF(TRIM(r.is_active),''))                              AS is_active,
+        UPPER(NULLIF(TRIM(r.member_type),''))                            AS member_type,
+        -- spec: INT, 5 digits. Anything else becomes NULL + warning (non-mandatory field)
+        IFF(REGEXP_LIKE(TRIM(r.post_code),'[0-9]{1,5}'), TRIM(r.post_code)::NUMBER, NULL) AS post_code,
+        NULLIF(TRIM(r.post_code),'') AS raw_post_code,
+        r.enrollment_date AS raw_enroll, r.last_flight_date AS raw_flight, r.dob AS raw_dob,
+        r.field_count_ok, r.batch_ts, r.src_file_name, r.src_row_number
+      FROM RAW.STRM_MEMBER_FEED r
+      WHERE r.rec_type = 'D'
+    ) p
+    LEFT JOIN CORE.REF_COUNTRY_ALIAS a ON a.alias = p.country_raw
+    LEFT JOIN CORE.REF_COUNTRY c       ON c.country_code = a.country_code
+    LEFT JOIN CORE.REF_TIER t          ON t.tier_code = p.tier_code
+  ) e
+  ) typed;
 
-  -- Bad rows -> quarantine as well (nothing is silently dropped)
-  INSERT INTO DQ.DQ_REJECT_MEMBER
-    SELECT * FROM STG.STG_MEMBER WHERE stg_load_ts = :v_run_ts AND dq_status = 'REJECTED';
-
-  SELECT COUNT(*), COUNT_IF(dq_status = 'VALID'), COUNT_IF(dq_status = 'REJECTED')
-    INTO :v_rows, :v_valid, :v_rejected FROM STG.STG_MEMBER WHERE stg_load_ts = :v_run_ts;
+  -- Counts come from the INSERT's own result (one column per INTO clause, in clause order), not from re-reading
+  -- STG: $1 = rows into STG_MEMBER, $2 = rows into DQ_REJECT_MEMBER.
+  SELECT $1, $2 INTO :v_rows, :v_rejected FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
+  v_valid := v_rows - v_rejected;
 
   INSERT INTO OPS.PIPELINE_RUN_LOG (step, metrics)
     SELECT 'stg_member', OBJECT_CONSTRUCT('rows', :v_rows, 'valid', :v_valid, 'rejected', :v_rejected,
