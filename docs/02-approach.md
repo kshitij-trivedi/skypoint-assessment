@@ -10,16 +10,12 @@
 
 ## How the work was done
 
-1. **Read the spec and the sample as a data engineer would in a source review.** The issues list in
-   [01-use-case-understanding.md](01-use-case-understanding.md) came first, before any code.
-2. **Designed the layers** (RAW, STG, CORE, DQ, OPS) and the table shapes, then wrote the Snowflake DDL.
+1. **Read the spec and the sample data.** The issues found are listed in
+   [01-use-case-understanding.md](01-use-case-understanding.md).
+2. **Designed the layers** (RAW, STG, CORE, DQ, OPS) and the table shapes, and wrote the Snowflake DDL.
 3. **Wrote each deliverable twice:** Snowflake SQL as the production path, and a small Python package (`skypoints/`)
-   implementing the same rules, so every rule could be unit-tested locally without a warehouse.
-4. **One test per rule or behaviour.** The tests run on the assessment's own sample files in `data/raw/`.
-5. **Review passes against the brief.** The first version of the code arrived in this repository in a few large
-   commits. The fixes from the file-by-file review pass that followed are separate commits, one per finding
-   or group of related findings, from "Use nullable Int64 for age/days/post_code" onward (see `git log`).
-   TODO(owner): confirm whether earlier review passes happened before the code was committed here.
+   implementing the same rules, so every rule can be unit-tested locally without a warehouse.
+4. **Tested the Python reference** with pytest, on the assessment's own sample files in `data/raw/`.
 
 ## Key decisions
 
