@@ -18,9 +18,10 @@ def _clean(v):
     return s if s != "" else None
 
 
-def batch_ts_from_filename(name: str) -> datetime | None:
-    """Record version comes from the file name. None if the name does not follow the spec."""
-    m = re.fullmatch(MEMBER_FILE_PATTERN, Path(name).name)
+def batch_ts_from_filename(name: str, pattern: str = MEMBER_FILE_PATTERN) -> datetime | None:
+    """Record version comes from the file name. None if the name does not follow the spec.
+    Groups 1-3 of the pattern are date, time and optional hundredths (TT -> TT*10 ms), as in OPS.FN_FILE_BATCH_TS."""
+    m = re.fullmatch(pattern, Path(name).name)
     if not m:
         return None
     try:

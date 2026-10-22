@@ -10,8 +10,12 @@ STALE_DAYS = 90
 # Nullable integer columns: pandas' Int64 keeps 38 as 38 (not 38.0) when another row is missing
 INT_COLS = {c: "Int64" for c in ("age", "days_since_flight", "post_code")}
 
-# File name spec (assumed - confirm with design doc): SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat, TT = hundredths
-MEMBER_FILE_PATTERN = r"SKYPOINTS_MEMBER_(\d{8})_(\d{6})(\d{2})?\.dat"
+# File name spec (assumed - confirm with design doc): SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat, TT = hundredths.
+# Matched against the base name. The same pattern text is used in sql/01_ddl.sql (OPS.FN_MEMBER_FILE_BATCH_TS);
+# [0-9] and [.] instead of \d and \. so it reads identically in Python and in Snowflake string literals.
+MEMBER_FILE_PATTERN = r"SKYPOINTS_MEMBER_([0-9]{8})_([0-9]{6})([0-9]{2})?[.]dat"
+# Country Excel exports: <CC>_YYYYMMDD_HHMMSS[TT].csv|xlsx (OPS.FN_EXCEL_FILE_BATCH_TS)
+EXCEL_FILE_PATTERN = r"[A-Z]{3}_([0-9]{8})_([0-9]{6})([0-9]{2})?[.](csv|xlsx)"
 
 # Spec (design doc) field order/lengths. Header of the sample file omits Post_Code -> flagged.
 SPEC_HEADER = ["member_name", "member_id", "enrollment_date", "last_flight_date", "tier_code", "agent_name",

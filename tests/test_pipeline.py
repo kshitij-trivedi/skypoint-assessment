@@ -99,6 +99,13 @@ def test_batch_ts_comes_from_spec_file_name_including_hundredths():
     assert batch_ts_from_filename("SKYPOINTS_MEMBER_20240115_02000045.dat") == datetime(2024, 1, 15, 2, 0, 0, 450000)
     assert batch_ts_from_filename("SKYPOINTS_MEMBER_20241315_020000.dat") is None      # month 13
     assert batch_ts_from_filename("members.csv") is None
+    assert batch_ts_from_filename("SKYPOINTS_MEMBER_20240115_020000xdat") is None      # '.' is literal, not any char
+
+def test_excel_export_name_pattern():
+    from skypoints.config import EXCEL_FILE_PATTERN
+    assert batch_ts_from_filename("aus/AUS_20240115_030000.csv", EXCEL_FILE_PATTERN) == datetime(2024, 1, 15, 3)
+    assert batch_ts_from_filename("IND_20240115_03000012.xlsx", EXCEL_FILE_PATTERN) == datetime(2024, 1, 15, 3, 0, 0, 120000)
+    assert batch_ts_from_filename("AUS.xlsx", EXCEL_FILE_PATTERN) is None
 
 def test_bad_file_name_rejects_rows_and_is_reported():
     raw, info = parse_flat_file(FLAT, "members_today.dat")

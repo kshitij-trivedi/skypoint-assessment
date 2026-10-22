@@ -11,6 +11,29 @@ CREATE SCHEMA IF NOT EXISTS SKYPOINTS.DQ;
 CREATE SCHEMA IF NOT EXISTS SKYPOINTS.OPS;
 USE SCHEMA SKYPOINTS.RAW;
 
+-- ---------- Record version from the file name ------------------------
+-- The timestamp in the file name is the record version used by "latest record wins". One definition, used by the
+-- COPY below, 01b_excel_feeds.sql and 05_validations.sql. Same pattern text as skypoints/config.py; [0-9] and [.]
+-- avoid backslash escaping. Groups: 1 = YYYYMMDD, 2 = HHMMSS, 3 = optional TT (hundredths -> TT*10 ms).
+-- Returns NULL when the base name does not match or the timestamp is not a real one (month 13), which staging
+-- turns into E_MISSING_BATCH_TS and 05_validations into B_BAD_FILE_NAME.
+CREATE OR REPLACE FUNCTION OPS.FN_FILE_BATCH_TS(FILE_NAME VARCHAR, PATTERN VARCHAR)
+RETURNS TIMESTAMP_NTZ
+AS
+$$
+  IFF(REGEXP_LIKE(REGEXP_REPLACE(FILE_NAME, '.*/', ''), PATTERN),
+      TIMEADD('millisecond',
+              10 * COALESCE(TRY_TO_NUMBER(REGEXP_SUBSTR(REGEXP_REPLACE(FILE_NAME, '.*/', ''), PATTERN, 1, 1, 'e', 3)), 0),
+              TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(REGEXP_REPLACE(FILE_NAME, '.*/', ''), PATTERN, 1, 1, 'e', 1)
+                                   || REGEXP_SUBSTR(REGEXP_REPLACE(FILE_NAME, '.*/', ''), PATTERN, 1, 1, 'e', 2),
+                                   'YYYYMMDDHH24MISS')),
+      NULL)
+$$;
+CREATE OR REPLACE FUNCTION OPS.FN_MEMBER_FILE_BATCH_TS(FILE_NAME VARCHAR) RETURNS TIMESTAMP_NTZ AS
+$$ OPS.FN_FILE_BATCH_TS(FILE_NAME, 'SKYPOINTS_MEMBER_([0-9]{8})_([0-9]{6})([0-9]{2})?[.]dat') $$;
+CREATE OR REPLACE FUNCTION OPS.FN_EXCEL_FILE_BATCH_TS(FILE_NAME VARCHAR) RETURNS TIMESTAMP_NTZ AS
+$$ OPS.FN_FILE_BATCH_TS(FILE_NAME, '[A-Z]{3}_([0-9]{8})_([0-9]{6})([0-9]{2})?[.](csv|xlsx)') $$;
+
 -- ---------- File formats & stages ------------------------------------
 -- Flat file lines look like  |D|Elena|223457|...  -> leading pipe => $1 is empty, $2 = record type
 CREATE FILE FORMAT IF NOT EXISTS FF_MEMBER_PIPE
@@ -45,7 +68,7 @@ CREATE TABLE IF NOT EXISTS RAW.RAW_MEMBER_FEED (
   field_count_ok    BOOLEAN,          -- FALSE => fields missing/extra, later columns would be shifted
   src_file_name     VARCHAR   NOT NULL,
   src_row_number    NUMBER    NOT NULL,
-  batch_ts          TIMESTAMP_NTZ,    -- parsed from file name (SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat); NULL => E_MISSING_BATCH_TS
+  batch_ts          TIMESTAMP_NTZ,    -- OPS.FN_MEMBER_FILE_BATCH_TS(file name); NULL => E_MISSING_BATCH_TS
   load_ts           TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 ) DATA_RETENTION_TIME_IN_DAYS = 7;
 
@@ -69,7 +92,7 @@ CREATE STREAM IF NOT EXISTS RAW.STRM_REDEMPTION_FEED ON TABLE RAW.RAW_REDEMPTION
 -- FROM (SELECT $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
 --              $12 IS NOT NULL AND COALESCE($13,'') = '' AND $14 IS NULL,   -- exactly the 11 expected fields
 --              METADATA$FILENAME, METADATA$FILE_ROW_NUMBER,
---              TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME,'[0-9]{8}_[0-9]{6}'),'YYYYMMDD_HH24MISS')
+--              OPS.FN_MEMBER_FILE_BATCH_TS(METADATA$FILENAME)     -- full name checked, TT included
 --       FROM @RAW.STG_MEMBER_FILES)
 -- ON_ERROR = CONTINUE;      -- COPY keeps per-file load history => the same file is never loaded twice
 -- COPY INTO RAW.RAW_REDEMPTION_FEED (payload, src_file_name, src_row_number)

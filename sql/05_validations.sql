@@ -6,11 +6,12 @@
 -- Each query returns rows only when something is WRONG, so they plug straight into an alerting task.
 -- =====================================================================
 
--- 5.0 File name must follow the spec SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat (the timestamp is the record version)
+-- 5.0 File name must follow the spec SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat (the timestamp is the record version).
+--     Same function as the COPY, so "bad name" here and E_MISSING_BATCH_TS in staging can never disagree.
 SELECT DISTINCT src_file_name, 'B_BAD_FILE_NAME' AS rule
 FROM RAW.RAW_MEMBER_FEED
 WHERE src_file_name NOT LIKE '%.xlsx%' AND src_file_name NOT LIKE '%.csv'
-  AND NOT REGEXP_LIKE(src_file_name, '(.*/)?SKYPOINTS_MEMBER_[0-9]{8}_[0-9]{6}([0-9]{2})?\\.dat');
+  AND OPS.FN_MEMBER_FILE_BATCH_TS(src_file_name) IS NULL;
 
 -- 5.1 Header record must match the design doc (sample header has no Post_Code, the spec has 11 fields)
 SELECT src_file_name, 'B_HEADER_MISMATCH' AS rule,

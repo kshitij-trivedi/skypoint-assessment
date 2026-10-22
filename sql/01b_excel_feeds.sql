@@ -5,7 +5,8 @@
 --   * no country column -> implied by the file
 --   * IDs are local counters (1,2,3 exist in BOTH files for different people) -> namespaced '<CC>-<id>'
 -- Snowflake cannot read .xlsx directly: export each sheet to CSV upstream (or Snowpark) and PUT it on the stage.
--- The export must be named <CC>_YYYYMMDD_HHMMSS.csv: that timestamp is the record version (otherwise E_MISSING_BATCH_TS).
+-- The export must be named <CC>_YYYYMMDD_HHMMSS[TT].csv: that timestamp is the record version (otherwise
+-- E_MISSING_BATCH_TS). Parsed by OPS.FN_EXCEL_FILE_BATCH_TS (01_ddl.sql), same pattern as skypoints/config.py.
 -- =====================================================================
 USE SCHEMA SKYPOINTS.RAW;
 
@@ -62,8 +63,7 @@ BEGIN
          IFF(NULLIF(TRIM(unique_id),'') IS NULL, NULL, 'AUS-' || TRIM(unique_id)),      -- namespace local ids
          OPS.FN_XL_DATE_YMD(date_of_enrollment), OPS.FN_XL_DATE_YMD(date_of_flight),
          tier_type, NULL, NULL, 'AUS', NULL, OPS.FN_XL_DATE_DMY(date_of_birth), NULL, NULL,
-         TRUE, src_file_name, src_row_number,
-         TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(src_file_name,'[0-9]{8}_[0-9]{6}'),'YYYYMMDD_HH24MISS')
+         TRUE, src_file_name, src_row_number, OPS.FN_EXCEL_FILE_BATCH_TS(src_file_name)
   FROM RAW.STRM_XL_AUS;
   v_aus := SQLROWCOUNT;
   INSERT INTO RAW.RAW_MEMBER_FEED
@@ -73,8 +73,7 @@ BEGIN
          IFF(NULLIF(TRIM(id),'') IS NULL, NULL, 'IND-' || TRIM(id)),
          OPS.FN_XL_DATE_YMD(enrollment_date), OPS.FN_XL_DATE_YMD(flight_date),
          tier_code, NULL, NULL, 'IND', NULL, OPS.FN_XL_DATE_DMY(dob), NULL, individual_or_corporate,
-         TRUE, src_file_name, src_row_number,
-         TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(src_file_name,'[0-9]{8}_[0-9]{6}'),'YYYYMMDD_HH24MISS')
+         TRUE, src_file_name, src_row_number, OPS.FN_EXCEL_FILE_BATCH_TS(src_file_name)
   FROM RAW.STRM_XL_IND;
   v_ind := SQLROWCOUNT;
   INSERT INTO OPS.PIPELINE_RUN_LOG (step, metrics) SELECT 'normalise_excel', OBJECT_CONSTRUCT('aus', :v_aus, 'ind', :v_ind);
