@@ -113,7 +113,7 @@ afterwards changes nothing.
 | Pruning | Clustering on `(date(batch_ts), country_code)` for staging, `member_id` for country tables and the registry, `(txn_date, member_id)` for the fact. Each run filters by `batch_ts` / load timestamp. |
 | Move detection | Registry point lookup instead of scanning every country table. |
 | Semi-structured data | JSON stays `VARIANT` in RAW (columnar, compressed); flattened once in staging. |
-| New countries | A row in `REF_COUNTRY` (plus aliases) and `CALL OPS.SP_ENSURE_COUNTRY_TABLES()`; no code change. |
+| New countries | A row in `REF_COUNTRY` (plus aliases) and `CALL OPS.SP_ENSURE_COUNTRY_TABLES()`, which creates the table and regenerates `V_MEMBER_ALL` from `REF_COUNTRY`; no code change. |
 | One bad row | Never fails a batch: staging text columns are unbounded and every check is a rule, so bad values are quarantined. |
 
 ## Reliability and observability

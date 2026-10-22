@@ -12,17 +12,26 @@
 -- =====================================================================
 
 -- The five known country tables are created in 01_ddl.sql; this onboards any country added to REF_COUNTRY later
+-- and (re)builds CORE.V_MEMBER_ALL as the UNION ALL of every country table, so V_MEMBER_ALL, V_MEMBER_CURRENT and
+-- V_REDEMPTION_ENRICHED pick up a new country without a code change. Every REF_COUNTRY row gets a table and a place
+-- in the view: is_enabled only controls whether staging accepts NEW rows for a country (E_UNKNOWN_COUNTRY), and
+-- disabling a country must not hide or strand the members already loaded there.
 CREATE OR REPLACE PROCEDURE OPS.SP_ENSURE_COUNTRY_TABLES()
 RETURNS VARCHAR
 LANGUAGE SQL
 AS
 $$
 DECLARE
-  c CURSOR FOR SELECT target_table FROM CORE.REF_COUNTRY WHERE is_enabled;
+  c CURSOR FOR SELECT target_table FROM CORE.REF_COUNTRY;
+  v_union VARCHAR;
 BEGIN
   FOR rec IN c DO
     EXECUTE IMMEDIATE 'CREATE TABLE IF NOT EXISTS CORE.' || rec.target_table || ' LIKE CORE.MEMBER_TEMPLATE';
   END FOR;
+  SELECT LISTAGG('SELECT * FROM CORE.' || target_table, ' UNION ALL ') WITHIN GROUP (ORDER BY country_code)
+    INTO :v_union FROM CORE.REF_COUNTRY;
+  -- Views depending on V_MEMBER_ALL resolve it at query time, so replacing it keeps them valid (same columns).
+  EXECUTE IMMEDIATE 'CREATE OR REPLACE VIEW CORE.V_MEMBER_ALL AS ' || v_union;
   RETURN 'ok';
 END;
 $$;
@@ -39,7 +48,9 @@ LANGUAGE SQL
 AS
 $$
 DECLARE
-  c CURSOR FOR SELECT country_code, target_table FROM CORE.REF_COUNTRY WHERE is_enabled;
+  -- All countries, not only enabled ones: a member moving out of a since-disabled country must still be deleted
+  -- there. The MERGE loop is unaffected, since staging never passes rows for a disabled country.
+  c CURSOR FOR SELECT country_code, target_table FROM CORE.REF_COUNTRY;
   v_candidates NUMBER; v_applied NUMBER; v_moved NUMBER; v_from TIMESTAMP_NTZ;
 BEGIN
   CALL OPS.SP_ENSURE_COUNTRY_TABLES();
@@ -119,13 +130,10 @@ EXCEPTION
 END;
 $$;
 
--- Convenience: one logical view over all country tables (regenerate when a country is onboarded)
-CREATE OR REPLACE VIEW CORE.V_MEMBER_ALL AS
-  SELECT * FROM CORE.TABLE_INDIA       UNION ALL
-  SELECT * FROM CORE.TABLE_USA         UNION ALL
-  SELECT * FROM CORE.TABLE_AUSTRALIA   UNION ALL
-  SELECT * FROM CORE.TABLE_PHILIPPINES UNION ALL
-  SELECT * FROM CORE.TABLE_CANADA;
+-- One logical view over all country tables, generated from REF_COUNTRY (see SP_ENSURE_COUNTRY_TABLES).
+-- Called here so the view exists before V_MEMBER_CURRENT and 04's V_REDEMPTION_ENRICHED are created on top of it;
+-- SP_LOAD_COUNTRY_TABLES calls it again on every run.
+CALL OPS.SP_ENSURE_COUNTRY_TABLES();
 
 -- Age/Stale are time-dependent, so stored values age. This view always gives "as of today" values.
 CREATE OR REPLACE VIEW CORE.V_MEMBER_CURRENT AS

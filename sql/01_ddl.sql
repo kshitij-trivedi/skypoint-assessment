@@ -186,7 +186,8 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_TEMPLATE (
   CONSTRAINT pk_member PRIMARY KEY (member_id)
 );
 
--- One table per country (identical shape). A new country later = row in REF_COUNTRY + CALL OPS.SP_ENSURE_COUNTRY_TABLES().
+-- One table per country (identical shape). A new country later = row in REF_COUNTRY + CALL OPS.SP_ENSURE_COUNTRY_TABLES(),
+-- which also regenerates CORE.V_MEMBER_ALL (03_split_by_country.sql).
 CREATE TABLE IF NOT EXISTS CORE.TABLE_INDIA       LIKE CORE.MEMBER_TEMPLATE;
 CREATE TABLE IF NOT EXISTS CORE.TABLE_USA         LIKE CORE.MEMBER_TEMPLATE;
 CREATE TABLE IF NOT EXISTS CORE.TABLE_AUSTRALIA   LIKE CORE.MEMBER_TEMPLATE;
