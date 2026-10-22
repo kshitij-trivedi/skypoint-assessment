@@ -10,6 +10,11 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        pandas: ["pinned"]            # requirements.txt: pandas>=2.2,<3
+        include:
+          - python-version: "3.13"
+            pandas: "3"               # next major, outside the pin, to catch breakage early
+    name: py${{ matrix.python-version }} pandas-${{ matrix.pandas }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,5 +22,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: pip install -r requirements.txt
+      - if: matrix.pandas == '3'
+        run: pip install "pandas>=3,<4"
+      - run: python -c "import pandas; print('pandas', pandas.__version__)"
       - run: pytest -q -W error::FutureWarning
-      - run: python run_demo.py
+      - run: python run_demo.py --out "$RUNNER_TEMP/curated"

@@ -95,7 +95,8 @@ Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_
 * Every rule id in `skypoints/` is referenced by at least one test, and a meta-test
   (`test_every_rule_id_in_the_code_is_referenced_by_a_test`) fails if a new rule is added without one. Per-rule
   coverage, including the SQL-only rules that have no Python test, is in [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
-* CI (`.github/workflows/tests.yml`) runs the tests and the demo on Python 3.11 to 3.13 on every push, with pandas
+* CI (`.github/workflows/tests.yml`) runs the tests and the demo on Python 3.11 to 3.13 (pandas 2, as pinned) and on
+  Python 3.13 with pandas 3, on every push, with pandas
   deprecation warnings treated as errors.
 
 ## Use of AI

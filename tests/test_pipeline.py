@@ -61,7 +61,7 @@ def test_ragged_row_is_rejected_not_shifted():
 def test_blank_last_field_is_not_mistaken_for_a_trailing_delimiter():
     s, _ = flat_stage(FLAT + "|D|Zed|900001|20200101|20230101|GLD|Sam|CA|USA|03051985|\n")
     z = s[s.member_id == "900001"].iloc[0]
-    assert z.dq_status == "VALID" and z.dq_errors == [] and z.is_active is None
+    assert z.dq_status == "VALID" and z.dq_errors == [] and pd.isna(z.is_active)   # None (pandas 2) / NaN (pandas 3)
 
 def test_trailing_pipe_on_a_full_row_is_a_delimiter():
     s, _ = flat_stage(FLAT + "|D|Zed|900001|20200101|20230101|GLD|Sam|CA|USA|03051985|A|\n")
