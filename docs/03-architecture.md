@@ -138,7 +138,7 @@ afterwards changes nothing.
 | Ingestion | Snowpipe auto-ingest from cloud storage; COPY load history makes each file load exactly once. Files sized around 100-250 MB compressed for parallel loading. |
 | Incremental processing | Append-only streams: each run reads only new rows. Streams are consumed by DML inside one transaction, so a failed run leaves them unconsumed and retries pick the same rows. |
 | Compute | All steps are set-based SQL (`INSERT ... SELECT`, `MERGE`, `QUALIFY`); no row-by-row logic, no data leaves the warehouse. A dedicated, auto-suspending warehouse per pipeline, sized by volume. |
-| Pruning | Clustering on `(date(batch_ts), country_code)` for staging, `member_id` for country tables and the registry, `(txn_date, member_id)` for the fact. Each run filters by `batch_ts` / load timestamp. |
+| Pruning | Clustering on `(date(batch_ts), country_code)` for staging, `member_id` for country tables and the registry, `(txn_date, member_id)` for the fact. Staging and redemption loads read only new rows from their streams and write every target in one pass (`INSERT ALL`), never reading their own output back; the country split reads from its stored watermark; the validation queries take a batch window. |
 | Move detection | Registry point lookup instead of scanning every country table. |
 | Semi-structured data | JSON stays `VARIANT` in RAW (columnar, compressed); flattened once in staging. |
 | New countries | A row in `REF_COUNTRY` (plus aliases) and `CALL OPS.SP_ENSURE_COUNTRY_TABLES()`, which creates the table and regenerates `V_MEMBER_ALL` from `REF_COUNTRY`; no code change. |
@@ -150,7 +150,8 @@ afterwards changes nothing.
 * **Exactly-once:** COPY load history, stream offsets, and no DDL inside transactions (Snowflake commits implicitly on DDL).
 * **Replayable:** quarantined rows keep everything needed to reprocess after a source fix.
 * **Measured:** every procedure writes row counts (in, valid, rejected, moved) to `OPS.PIPELINE_RUN_LOG`;
-  `05_validations.sql` queries return rows only on failure, so they plug straight into alerts.
+  `05_validations.sql` queries return rows only on failure, so they could feed alerts directly; in this repo they
+  are run manually and no alerting is set up.
 * **Governance (recommended):** member name and DOB are personal data; apply Snowflake masking policies on the CORE
   tables and restrict RAW / DQ to the pipeline role.
 

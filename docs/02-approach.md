@@ -16,8 +16,10 @@
 3. **Wrote each deliverable twice:** Snowflake SQL as the production path, and a small Python package (`skypoints/`)
    implementing the same rules, so every rule could be unit-tested locally without a warehouse.
 4. **One test per rule or behaviour.** The tests run on the assessment's own sample files in `data/raw/`.
-5. **Review passes against the brief.** Each pass compared the code with the spec and the sample data, and
-   every fix landed as its own commit (see `git log`).
+5. **Review passes against the brief.** The first version of the code arrived in this repository in a few large
+   commits. The fixes from the file-by-file review pass that followed are separate commits, one per finding
+   or group of related findings, from "Use nullable Int64 for age/days/post_code" onward (see `git log`).
+   TODO(owner): confirm whether earlier review passes happened before the code was committed here.
 
 ## Key decisions
 
@@ -98,15 +100,41 @@ Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_
 
 ## Use of AI
 
-AI was used to draft code, tests and documentation, and as a reviewer. It was kept honest by the tests (one per rule)
-and by explicit review passes against the brief. Those passes found real defects that were then fixed in separate
-commits, for example: streams that would never advance their offset, DDL that silently committed a transaction
-mid-move, and staging columns that would crash a whole batch on a single oversized value. Design decisions (the
-version rule, the registry, quarantine over drop, namespacing) were made and checked by the engineer.
+What is stated here is what can be checked in this repository; anything not yet confirmed by the author is marked
+`TODO(owner): confirm`.
+
+* The fixes from the file-by-file review pass (commits from "Use nullable Int64 for age/days/post_code" onward) were
+  implemented with Claude Code, an AI coding assistant, working from the list of review findings. Before each commit
+  the full test suite (pandas `FutureWarning` as errors) and `run_demo.py` were run and had to pass. The parser,
+  date and miles fixes were written test first: the new tests failed before the fix (and one of them exposed a
+  further bug, valid miles rejected once any value in the file had a fraction).
+* Checks on the AI's output in that pass: the tests, the meta-test that every rule id has a test, the committed demo
+  output in `data/curated` staying unchanged unless a change was intended, a diff of the demo's printed output where
+  a change touched it, and the parity table. One review finding (an
+  over-escaped regex in `05_validations.sql`) did not reproduce and is recorded as such in the commit message, not
+  "fixed".
+* TODO(owner): confirm which AI tools were used for the original code, tests and documentation, and in what role
+  (drafting, reviewing).
+* TODO(owner): confirm that earlier review passes found and fixed the defects previously listed here: streams that
+  would never advance their offset, DDL that committed a transaction mid-move, and staging columns that would crash a
+  whole batch on one oversized value.
+* TODO(owner): confirm that the design decisions (the version rule, the registry, quarantine over drop, namespacing)
+  were made and checked by the engineer.
+* **The SQL has not been executed.** Nothing in `sql/` has been run on a Snowflake account; only the Python
+  implementation is tested. Which rules exist in SQL, in Python and in the tests is listed in
+  [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
 
 ## Known limitations
 
 * The SQL is written for Snowflake but has **not been executed against a Snowflake account**; the Python reference and
-  its tests do run.
-* Scheduling (Snowflake Tasks) is described in [03-architecture.md](03-architecture.md) but not scripted.
-* The assumptions listed in [01-use-case-understanding.md](01-use-case-understanding.md) need confirmation.
+  its tests do run. Snowflake-specific points that are untested include the multi-table `INSERT ALL` with
+  `RESULT_SCAN` counts, procedure `DEFAULT` arguments, `EXCEPTION` blocks and how a JSON `12.0` renders as text.
+* No scheduling is scripted: there is no Snowflake Task graph, the procedures are called by hand and
+  `05_validations.sql` is run manually (design in [03-architecture.md](03-architecture.md)).
+* The country split's watermark does not pick up a file whose timestamp is older than the watermark but arrives
+  late; that needs a backfill call with `P_BATCH_FROM`.
+* The sample Excel files have no timestamp in their names. The demo gives them an explicit version
+  (`DEMO_EXCEL_BATCH_TS`); the SQL path would reject their rows (`E_MISSING_BATCH_TS`).
+* Open assumptions to confirm with the source team ([details](01-use-case-understanding.md#assumptions-to-confirm-with-the-source-team)):
+  DOB is `DDMMYYYY`; the file name pattern `SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat`; tier (`GLD/SLV/PLT`), active
+  flag (`A/I`) and member type (`I/C`) values; and that redemptions for Excel-fed members carry `source_country`.

@@ -47,7 +47,12 @@ the per-country tables, a redemption going from PENDING to COMPLETED, a rejected
 
 ```
 .
-├── docs/                         use case, approach, architecture
+├── docs/
+│   ├── 01-use-case-understanding.md   business problem, sample-data issues, assumptions
+│   ├── 02-approach.md                 decisions, validation catalogue, testing, use of AI, limitations
+│   ├── 03-architecture.md             data flow (Mermaid), layers, run order, scale
+│   ├── SQL_PYTHON_PARITY.md           every rule id: SQL, Python, covering test, known gaps
+│   └── architecture.png               rendered diagram
 ├── sql/                          Snowflake, numbered in run order
 │   ├── 01_ddl.sql                schemas, stages, RAW / STG / CORE / DQ / OPS tables
 │   ├── 01b_excel_feeds.sql       country Excel feeds -> canonical RAW
@@ -56,7 +61,7 @@ the per-country tables, a redemption going from PENDING to COMPLETED, a rejected
 │   ├── 04_redemptions.sql        JSON flatten, fact MERGE, join-back view
 │   └── 05_validations.sql        file and batch level checks
 ├── skypoints/                    Python reference implementation
-├── tests/                        pytest suite
+├── tests/                        pytest suite (67 tests)
 ├── data/
 │   ├── raw/                      input: assessment sample feeds (flat files, JSON, Excel)
 │   └── curated/                  output of run_demo.py: country tables, enriched redemptions, rejects
@@ -66,8 +71,16 @@ the per-country tables, a redemption going from PENDING to COMPLETED, a rejected
 └── .github/workflows/tests.yml   CI: tests + demo on every push
 ```
 
-## Status
+## Known limitations
 
-The Python implementation and its tests run (locally and in CI). The SQL is written for Snowflake but has **not yet
-been executed against a Snowflake account**. Assumptions awaiting confirmation from the source team are listed in
-[use-case understanding](docs/01-use-case-understanding.md#assumptions-to-confirm-with-the-source-team).
+* **The SQL has not been executed against a Snowflake account.** The Python implementation and its tests run
+  (locally and in CI); the SQL is written to the Snowflake documentation only. Rule coverage on each side is in
+  [SQL_PYTHON_PARITY.md](docs/SQL_PYTHON_PARITY.md).
+* **No scheduling is scripted.** There is no Snowflake Task graph: the procedures are called by hand and the
+  validation queries in `05_validations.sql` are run manually.
+* **Open assumptions** to confirm with the source team: DOB is `DDMMYYYY`; the file name pattern
+  `SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat`; the tier (`GLD/SLV/PLT`), active flag (`A/I`) and member type (`I/C`)
+  values; and that redemptions for Excel-fed members carry `source_country`. Details in
+  [use-case understanding](docs/01-use-case-understanding.md#assumptions-to-confirm-with-the-source-team).
+* More detail, including the late-file watermark case and the demo's Excel record version, in
+  [2. Approach](docs/02-approach.md#known-limitations).
