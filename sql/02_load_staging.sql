@@ -2,10 +2,9 @@
 -- 2. RAW -> STG : type, standardise, derive Age + Stale_Member, evaluate DQ rules
 -- Business date is a parameter (not CURRENT_DATE) so reruns/backfills are reproducible.
 --   SET BUSINESS_DATE = '2024-01-15'::DATE;
--- Exactly-once: the stream offset only advances when a DML statement reads it and the transaction commits,
--- so the stream is read by the INSERT itself (a CTAS/temp table would NOT consume it, and DDL inside an
--- explicit transaction implicitly commits it). One multi-table INSERT writes STG and the quarantine in a single
--- pass, so this run's rows are never read back from STG (stg_load_ts is not the clustering key).
+-- Exactly-once: the stream is consumed only by DML inside the transaction; DDL inside a transaction commits it
+-- implicitly, so no temp tables are created here. One multi-table INSERT writes STG and the quarantine in a
+-- single pass, so this run's rows are never read back from STG (stg_load_ts is not the clustering key).
 -- Read inside-out: p = parsed from the stream, e = enriched with reference data and derived columns,
 -- typed = rule outcomes. (Subqueries instead of a WITH clause: the multi-table INSERT documentation shows a
 -- plain subquery.)
@@ -98,7 +97,7 @@ BEGIN
         TRY_TO_DATE(NULLIF(TRIM(r.enrollment_date),''),  'YYYYMMDD')     AS enrollment_date,
         TRY_TO_DATE(NULLIF(TRIM(r.last_flight_date),''), 'YYYYMMDD')     AS last_flight_date,
         -- DOB arrives DDMMYYYY and the staging extract lost the leading zero (3051985) => LPAD first.
-        -- !! DDMMYYYY vs MMDDYYYY must be confirmed with the source design doc.
+        -- ASSUMPTION: DOB is DDMMYYYY; confirm with the source design doc.
         TRY_TO_DATE(LPAD(NULLIF(TRIM(r.dob),''),8,'0'),  'DDMMYYYY')     AS dob,
         UPPER(NULLIF(TRIM(r.tier_code),''))                              AS tier_code,
         NULLIF(TRIM(r.agent_name),'')                                    AS agent_name,
