@@ -37,10 +37,13 @@ def check_key_uniqueness(stg: pd.DataFrame) -> list[dict]:
 
 
 def check_profile(stg: pd.DataFrame, flat_only: bool = True) -> list[dict]:
-    """Profiling checks that catch the anomalies visible in the sample data."""
+    """Profiling checks that catch the anomalies visible in the sample data. Per file, VALID flat-file rows,
+    files with at least 5 such rows (same scope as the queries in sql/05)."""
     f = []
-    v = stg[(stg.dq_status == "VALID") & ((stg.source_type == "flat") if flat_only else True)]
-    if len(v) >= 5:
+    valid = stg[(stg.dq_status == "VALID") & ((stg.source_type == "flat") if flat_only else True)]
+    for _, v in valid.groupby("src_file_name"):
+        if len(v) < 5:
+            continue
         lens = v.member_id.str.len()
         typical = lens.mode().iloc[0]
         for mid in v.member_id[lens != typical]:
@@ -80,9 +83,14 @@ def check_field_reconciliation(raw: pd.DataFrame, stg: pd.DataFrame) -> list[dic
 
 
 def check_reject_rate(stg: pd.DataFrame, threshold: float = 0.01) -> list[dict]:
-    rate = (stg.dq_status == "REJECTED").mean() if len(stg) else 0
-    return [{"rule": "B_REJECT_RATE", "severity": "ERROR",
-             "detail": f"{rate:.1%} rejected > {threshold:.0%}"}] if rate > threshold else []
+    """Circuit breaker per file, like sql/05: one bad file must not hide behind a large clean one."""
+    f = []
+    for file, g in stg.groupby("src_file_name"):
+        rate = (g.dq_status == "REJECTED").mean()
+        if rate > threshold:
+            f.append({"rule": "B_REJECT_RATE", "severity": "ERROR",
+                      "detail": f"{file}: {rate:.1%} rejected > {threshold:.0%}"})
+    return f
 
 
 def check_redemption_keys(staged: pd.DataFrame) -> list[dict]:

@@ -94,6 +94,20 @@ def test_profile_checks_catch_sample_anomalies():
     assert {"B_ID_LENGTH_OUTLIER", "B_DOB_PLACEHOLDER", "B_ALL_STALE", "B_COUNTRY_ALIAS_USED",
             "B_HEADER_MISSING_FIELDS"} <= rules
 
+def test_profiles_are_per_file_and_ignore_excel_rows():
+    six = "".join(f"|D|M{i}|10000{i}|20101012|20240101|GLD|Sam|CA|USA|0{i}011980|A\n" for i in range(5))
+    five = "".join(f"|D|N{i}|2000{i}|20101012|20240101|GLD|Sam|CA|USA|0{i}011980|A\n" for i in range(5))
+    a, _ = flat_stage(HDR + six, name="a.dat"); b, _ = flat_stage(HDR + five, name="b.dat")
+    excel = stage_member(parse_excel_feed(SAMPLES / "AUS.xlsx", "AUS", T1), AS_OF)
+    # each file is consistent on its own: 6-digit ids in a.dat, 5-digit in b.dat; AUS-1.. are not flat rows
+    assert validate.check_profile(pd.concat([a, b, excel], ignore_index=True)) == []
+
+def test_reject_rate_is_per_file():
+    good, _ = flat_stage(name="good.dat")
+    bad, _ = flat_stage(HDR + "|D|Bad|777|20101012||GLD|Sam|X|ZZZ|01011990|A\n", name="bad.dat")
+    [f] = validate.check_reject_rate(pd.concat([good] * 30 + [bad], ignore_index=True))   # 1 of 151 rows overall
+    assert f["rule"] == "B_REJECT_RATE" and f["detail"].startswith("bad.dat: 100.0%")
+
 def test_batch_ts_comes_from_spec_file_name_including_hundredths():
     assert batch_ts_from_filename("in/SKYPOINTS_MEMBER_20240115_020000.dat") == datetime(2024, 1, 15, 2)
     assert batch_ts_from_filename("SKYPOINTS_MEMBER_20240115_02000045.dat") == datetime(2024, 1, 15, 2, 0, 0, 450000)

@@ -67,15 +67,22 @@
 | Rule | Check |
 |---|---|
 | `B_BAD_FILE_NAME` | Name does not follow the spec |
-| `B_HEADER_MISSING_FIELDS`, `B_HEADER_UNKNOWN_FIELDS` | Header drift vs the design doc |
+| `B_HEADER_MISSING_FIELDS`, `B_HEADER_UNKNOWN_FIELDS` | Header drift vs the design doc, by field name |
+| `B_HEADER_MISMATCH` (SQL only) | Header names not exactly in spec order; matters because the COPY maps by position |
 | `B_TRAILER_COUNT_MISMATCH` | Trailer count differs from detail rows |
 | `B_DUPLICATE_KEY` | Same member twice in one file |
 | `B_ID_COLLISION` | Same ID used by different people (name and DOB differ) |
 | `B_MEMBER_IN_MULTIPLE_COUNTRIES` | Post-load: a member in more than one country table |
-| `B_ID_LENGTH_OUTLIER`, `B_DOB_PLACEHOLDER`, `B_ALL_STALE`, `B_COUNTRY_ALIAS_USED` | Profiling aimed at the sample's anomalies |
+| `B_ID_LENGTH_OUTLIER`, `B_DOB_PLACEHOLDER`, `B_ALL_STALE` | Profiling aimed at the sample's anomalies; per file, flat-file rows only |
+| `B_COUNTRY_ALIAS_USED` | Country spelled as an alias (`AU`, `PHIL`) and mapped |
 | `B_FIELD_DROPPED` | Values present in RAW missing in STG |
+| `B_ROW_COUNT_MISMATCH` (SQL only) | RAW detail rows that never reached STG |
 | `B_REJECT_RATE` | Circuit breaker: more than 1% of a file rejected |
 | `B_TXN_ID_COLLISION` | Same `txn_id` under two members |
+| `B_ORPHAN_REDEMPTION` (SQL only) | Redemptions whose member is unknown or quarantined |
+| `B_FACT_DUPLICATE_TXN` (SQL only) | Primary-key check on the redemption fact (Snowflake does not enforce PKs) |
+
+Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
 
 ## Testing strategy
 
