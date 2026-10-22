@@ -17,7 +17,7 @@ def _up(v):
 def stage_member(raw: pd.DataFrame, as_of: date) -> pd.DataFrame:
     out = []
     for r in raw.to_dict("records"):
-        r = {k: (None if (not isinstance(v, (list, bool)) and pd.isna(v)) else v) for k, v in r.items()}  # NaN is truthy!
+        r = {k: (None if (not isinstance(v, (list, bool)) and pd.isna(v)) else v) for k, v in r.items()}  # normalise NaN to None (NaN is truthy)
         errors, warns = [], []
         enroll, st_e = parse_date(r["enrollment_date"], "YYYYMMDD")
         flight, st_f = parse_date(r["last_flight_date"], "YYYYMMDD")

@@ -9,7 +9,7 @@ from .dates import parse_date
 def stage_redemptions(flat: pd.DataFrame):
     good, bad = [], []
     for r in flat.to_dict("records"):
-        r = {k: (None if pd.isna(v) else v) for k, v in r.items()}   # NaN is truthy
+        r = {k: (None if pd.isna(v) else v) for k, v in r.items()}   # normalise NaN to None (NaN is truthy)
         e = []
         txn_d, s1 = parse_date(r["txn_date"]); feed_d, s2 = parse_date(r["feed_date"])
         # Checked on the text, not a parsed number: '12.0', '12.5', '012', '+12' and 13+ digits all fail.
