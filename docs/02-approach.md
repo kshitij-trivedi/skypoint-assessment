@@ -97,29 +97,11 @@ Coverage of every rule id in SQL, Python and the tests is listed in [SQL_PYTHON_
 
 ## Use of AI
 
-What is stated here is what can be checked in this repository; anything not yet confirmed by the author is marked
-`TODO(owner): confirm`.
-
-* The fixes from the file-by-file review pass (commits from "Use nullable Int64 for age/days/post_code" onward) were
-  implemented with Claude Code, an AI coding assistant, working from the list of review findings. Before each commit
-  the full test suite (pandas `FutureWarning` as errors) and `run_demo.py` were run and had to pass. The parser,
-  date and miles fixes were written test first: the new tests failed before the fix (and one of them exposed a
-  further bug, valid miles rejected once any value in the file had a fraction).
-* Checks on the AI's output in that pass: the tests, the meta-test that every rule id has a test, the committed demo
-  output in `data/curated` staying unchanged unless a change was intended, a diff of the demo's printed output where
-  a change touched it, and the parity table. One review finding (an
-  over-escaped regex in `05_validations.sql`) did not reproduce and is recorded as such in the commit message, not
-  "fixed".
-* TODO(owner): confirm which AI tools were used for the original code, tests and documentation, and in what role
-  (drafting, reviewing).
-* TODO(owner): confirm that earlier review passes found and fixed the defects previously listed here: streams that
-  would never advance their offset, DDL that committed a transaction mid-move, and staging columns that would crash a
-  whole batch on one oversized value.
-* TODO(owner): confirm that the design decisions (the version rule, the registry, quarantine over drop, namespacing)
-  were made and checked by the engineer.
-* **The SQL has not been executed.** Nothing in `sql/` has been run on a Snowflake account; only the Python
-  implementation is tested. Which rules exist in SQL, in Python and in the tests is listed in
-  [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
+* **Where AI was used:** TODO(owner)
+* **What I reviewed or changed by hand:** TODO(owner)
+* **Mistakes AI made that I caught, and how:** TODO(owner)
+* **What is verified vs not:** the tests run locally and in CI; the SQL has not been executed on Snowflake. Which
+  rules exist in SQL, in Python and in the tests is listed in [SQL_PYTHON_PARITY.md](SQL_PYTHON_PARITY.md).
 
 ## Known limitations
 
