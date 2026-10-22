@@ -94,6 +94,9 @@ afterwards changes nothing.
 
 * `LATERAL FLATTEN` over `payload:redemptions` turns one member document into one row per transaction in
   `STG.STG_REDEMPTION`, each with its rule outcome. That table is the flattened, queryable form of the feed.
+* One multi-table `INSERT ALL` over the stream writes `STG_REDEMPTION`, the quarantine and a per-run work table in a
+  single pass. Only the quarantine (`DQ_REJECT_REDEMPTION`) keeps the original member document and transaction
+  element, because that is what a replay needs; the staging table does not repeat the document on every row.
 * Valid rows `MERGE` into `CORE.FACT_REDEMPTION` keyed on `txn_id`; a newer `feed_date` overwrites (PENDING to
   COMPLETED).
 * **Join back to the member:** `FACT_REDEMPTION.member_id` to `MEMBER_CURRENT_COUNTRY.member_id` (gives the current

@@ -235,11 +235,11 @@ CREATE TABLE IF NOT EXISTS STG.STG_REDEMPTION (
   errors          ARRAY,                     -- empty = valid
   src_file_name   VARCHAR,
   src_row_number  NUMBER,
-  payload         VARIANT,
-  txn             VARIANT,
   stg_load_ts     TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 ) CLUSTER BY (TO_DATE(stg_load_ts));
 
+-- The member document (payload) and the transaction element (txn) are kept only here, for replay after a source
+-- fix. STG_REDEMPTION does not repeat the whole document on every transaction row; RAW keeps it once anyway.
 CREATE TABLE IF NOT EXISTS DQ.DQ_REJECT_REDEMPTION (
   payload VARIANT, txn VARIANT, error_codes ARRAY, src_file_name VARCHAR, src_row_number NUMBER,
   rejected_ts TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP());
