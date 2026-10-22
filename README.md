@@ -8,6 +8,10 @@ join back to the member profile, at a design scale of billions of rows a day.
 * **Production path:** Snowflake SQL in [`sql/`](sql/) (set-based, incremental via streams).
 * **Reference implementation:** the same rules in Python in [`skypoints/`](skypoints/), used for the tests and the live demo.
 
+![Architecture: source files land in RAW, procedures stage, split and flatten them into CORE](docs/architecture.png)
+
+Numbers on the edges are the run order; see [3. Architecture](docs/03-architecture.md) for the Mermaid source.
+
 ## Documentation
 
 | Document | Contents |

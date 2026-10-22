@@ -4,50 +4,77 @@
 
 ```mermaid
 flowchart LR
-    subgraph SRC["Source system (daily)"]
-        F["Member flat file<br/>SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS.dat"]
-        J["Redemption JSON feed"]
-        X["Country Excel feeds<br/>AUS / IND, exported to CSV"]
+    subgraph SRC["Source files (daily)"]
+        F["Member flat file<br/>SKYPOINTS_MEMBER_..._HHMMSS[TT].dat"]
+        X["Country Excel exports<br/>AUS / IND as CSV"]
+        J["Redemption JSON<br/>optional source_country"]
     end
 
-    subgraph RAW["RAW: landing, all text, immutable"]
-        RM["RAW_MEMBER_FEED"]
-        RJ["RAW_REDEMPTION_FEED<br/>(VARIANT)"]
+    subgraph RAW["RAW: as received, all text"]
         RX["RAW_XL_AUS / RAW_XL_IND"]
+        RM["RAW_MEMBER_FEED"]
+        RJ["RAW_REDEMPTION_FEED"]
     end
 
-    subgraph STG["STG: typed, derived, DQ verdict"]
-        SM["STG_MEMBER<br/>Age, Stale_Member, dq_errors, dq_warnings"]
-        SR["STG_REDEMPTION<br/>one row per txn"]
+    REF["REF_COUNTRY<br/>REF_COUNTRY_ALIAS<br/>REF_TIER"]
+
+    P2(["SP_NORMALISE_EXCEL_FEEDS<br/>ids namespaced: AUS-1"])
+    P3(["SP_LOAD_STG_MEMBER<br/>Age, Stale_Member, rules"])
+    P4(["SP_LOAD_COUNTRY_TABLES<br/>latest record wins"])
+    P5(["SP_LOAD_REDEMPTIONS<br/>FLATTEN; source_country gives AUS-1"])
+
+    subgraph STG["STG"]
+        SM["STG_MEMBER"]
+        SR["STG_REDEMPTION"]
     end
 
-    subgraph CORE["CORE: serving"]
-        REG["MEMBER_CURRENT_COUNTRY<br/>(registry)"]
-        CT["TABLE_INDIA, TABLE_USA,<br/>TABLE_AUSTRALIA, TABLE_PHILIPPINES,<br/>TABLE_CANADA"]
+    subgraph CORE["CORE"]
+        REG["MEMBER_CURRENT_COUNTRY<br/>registry"]
+        CT["TABLE_INDIA ... TABLE_CANADA"]
+        VA["V_MEMBER_ALL<br/>union of country tables"]
+        VC["V_MEMBER_CURRENT"]
         FR["FACT_REDEMPTION"]
-        V["V_REDEMPTION_ENRICHED<br/>V_MEMBER_CURRENT"]
+        VE["V_REDEMPTION_ENRICHED"]
     end
 
-    DQ["DQ: DQ_REJECT_MEMBER<br/>DQ_REJECT_REDEMPTION"]
-    OPS["OPS: PIPELINE_RUN_LOG<br/>+ 05_validations alerts"]
+    DQ["DQ_REJECT_MEMBER<br/>DQ_REJECT_REDEMPTION"]
+    LOG["OPS.PIPELINE_RUN_LOG"]
+    V6["validation queries<br/>manual, not scheduled"]
 
-    F -->|"COPY / Snowpipe"| RM
-    J -->|"COPY / Snowpipe"| RJ
-    X -->|COPY| RX
-    RX -->|"SP_NORMALISE_EXCEL_FEEDS<br/>namespaced ids"| RM
-    RM -->|"stream -> SP_LOAD_STG_MEMBER"| SM
-    RJ -->|"stream -> SP_LOAD_REDEMPTIONS<br/>LATERAL FLATTEN"| SR
-    SM -->|"SP_LOAD_COUNTRY_TABLES<br/>latest record wins"| CT
-    SM --> REG
-    SR -->|"MERGE, latest feed_date"| FR
-    SM -.->|rejected| DQ
-    SR -.->|rejected| DQ
-    FR --> V
-    REG --> V
-    CT --> V
-    SM -.-> OPS
-    CT -.-> OPS
+    F -->|"1 COPY"| RM
+    X -->|"1 COPY"| RX
+    J -->|"1 COPY"| RJ
+    RX -->|2| P2 --> RM
+    RM -->|"3 stream"| P3
+    REF --> P3
+    P3 --> SM
+    SM -->|4| P4
+    P4 <-->|"read + update"| REG
+    P4 --> CT
+    CT --> VA
+    VA --> VC
+    RJ -->|"5 stream"| P5
+    P5 --> SR
+    P5 -->|MERGE| FR
+    FR --> VE
+    REG --> VE
+    VA --> VE
+    P3 -.->|rejected| DQ
+    P5 -.->|rejected| DQ
+    P2 & P3 & P4 & P5 -.-> LOG
+    STG & CORE -.->|6| V6
+
+    classDef table fill:#eef4fb,stroke:#4a78a8,color:#1b2b3a
+    classDef proc fill:#fdf3e1,stroke:#b07a1e,color:#3a2a10
+    classDef quarantine fill:#fbeaea,stroke:#a84a4a,color:#3a1b1b,stroke-dasharray:5 4
+    class F,X,J,RX,RM,RJ,REF,SM,SR,REG,CT,VA,VC,FR,VE,LOG table
+    class P2,P3,P4,P5,V6 proc
+    class DQ quarantine
 ```
+
+Rendered: [architecture.png](architecture.png). Rounded boxes are procedures, square boxes are tables and views, the
+dashed box is the quarantine; dotted edges are the run log and the manual validation queries. Edge numbers follow the run order below. `P4 <--> registry`: the country split reads
+each member's current country and version from the registry and updates it in the same transaction.
 
 ## Layers
 
@@ -66,14 +93,15 @@ flowchart LR
 | 0 | `01_ddl.sql`, `01b_excel_feeds.sql` | One-off: schemas, file formats, stages, tables, streams, reference data |
 | 1 | `COPY INTO` / Snowpipe | Load new files into RAW (load history prevents loading the same file twice) |
 | 2 | `CALL OPS.SP_NORMALISE_EXCEL_FEEDS()` | Map each Excel layout into the canonical RAW layout; namespace IDs |
-| 3 | `CALL OPS.SP_LOAD_STG_MEMBER(<business_date>)` | RAW stream to STG: type, Age, Stale_Member, rules; rejects copied to DQ |
+| 3 | `CALL OPS.SP_LOAD_STG_MEMBER(<business_date>)` | RAW stream to STG: type, Age, Stale_Member, rules (reference data from `REF_*`); rejects written to DQ in the same pass |
 | 4 | `CALL OPS.SP_LOAD_COUNTRY_TABLES()` | Latest record wins into the country tables and the registry, from the stored watermark (`OPS.PIPELINE_WATERMARK`); pass a timestamp only to backfill |
 | 5 | `CALL OPS.SP_LOAD_REDEMPTIONS()` | JSON stream flattened into STG_REDEMPTION, then MERGE into the fact |
-| 6 | `05_validations.sql` | File/batch checks; each query returns rows only when something is wrong |
+| 6 | `05_validations.sql` | File/batch checks, run manually; each query returns rows only when something is wrong |
 
-In production, steps 2 to 6 run as a **Snowflake Task graph** triggered when the streams have data
-(`WHEN SYSTEM$STREAM_HAS_DATA('RAW.STRM_MEMBER_FEED')`), with step 6 failing the run if the reject-rate breaker trips.
-The task graph is a design here and is not scripted in the repo.
+Steps 2 to 5 write their row counts to `OPS.PIPELINE_RUN_LOG`. **Nothing is scheduled in this repo:** the
+procedures are called by hand and the validation queries are run manually. The intended production setup is a
+Snowflake Task graph triggered when the streams have data (`WHEN SYSTEM$STREAM_HAS_DATA('RAW.STRM_MEMBER_FEED')`),
+with step 6 failing the run if the reject-rate breaker trips; it is not scripted.
 
 ## Latest record wins
 
