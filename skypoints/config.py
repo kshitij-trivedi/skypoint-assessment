@@ -7,6 +7,8 @@ ACTIVE_FLAGS = {"A", "I"}
 MEMBER_TYPES = {"I", "C"}   # IND feed: Individual / Corporate
 REDEMPTION_STATUSES = {"COMPLETED", "PENDING", "CANCELLED", "REVERSED"}
 STALE_DAYS = 90
+# Nullable integer columns: pandas' Int64 keeps 38 as 38 (not 38.0) when another row is missing
+INT_COLS = {c: "Int64" for c in ("age", "days_since_flight", "post_code")}
 
 # File name spec (assumed - confirm with design doc): SKYPOINTS_MEMBER_YYYYMMDD_HHMMSS[TT].dat, TT = hundredths
 MEMBER_FILE_PATTERN = r"SKYPOINTS_MEMBER_(\d{8})_(\d{6})(\d{2})?\.dat"

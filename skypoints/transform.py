@@ -1,7 +1,7 @@
 """STG -> per-country tables with 'latest record wins' + member-moved-country handling (mirrors sql/03)."""
 from __future__ import annotations
 import pandas as pd
-from .config import COUNTRY_TABLES
+from .config import COUNTRY_TABLES, INT_COLS
 
 KEEP = ["member_id", "member_name", "enrollment_date", "last_flight_date", "tier_code", "agent_name", "state",
         "country_code", "post_code", "dob", "is_active", "member_type", "age", "days_since_flight", "stale_member",
@@ -34,7 +34,7 @@ def apply_batch(stg: pd.DataFrame, targets: dict, registry: pd.DataFrame):
         if prev is not None and prev["country_code"] != r["country_code"]:
             moved += 1
         keep_rows.append(r)
-    applied = pd.DataFrame(keep_rows, columns=KEEP)
+    applied = pd.DataFrame(keep_rows, columns=KEEP).astype(INT_COLS)   # to_dict() above drops the Int64 dtype
     if len(applied):
         ids = set(applied.member_id)
         for name, t in targets.items():          # (c) delete from every country table (covers moves + upsert)

@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date
 import re
 import pandas as pd
-from .config import (COUNTRY_ALIASES, COUNTRY_TABLES, TIERS, ACTIVE_FLAGS, MEMBER_TYPES, MAX_LEN, STALE_DAYS)
+from .config import (COUNTRY_ALIASES, COUNTRY_TABLES, TIERS, ACTIVE_FLAGS, MEMBER_TYPES, MAX_LEN, STALE_DAYS,
+                     INT_COLS)
 from .dates import parse_date, completed_years
 
 _ID_RE = re.compile(r"^[A-Za-z0-9-]+$")
@@ -63,4 +64,5 @@ def stage_member(raw: pd.DataFrame, as_of: date) -> pd.DataFrame:
                     # no flight date => treated as stale (same rule as SQL)
                     "stale_member": True if days is None else days > STALE_DAYS,
                     "dq_status": "REJECTED" if errors else "VALID", "dq_errors": errors, "dq_warnings": warns})
-    return pd.DataFrame(out)
+    df = pd.DataFrame(out)
+    return df.astype(INT_COLS) if len(df) else df
