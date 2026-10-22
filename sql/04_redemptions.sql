@@ -18,8 +18,8 @@ BEGIN
 
   -- One pass over the stream writes all three targets. A multi-table INSERT is DML, so reading the stream here
   -- consumes it when the transaction commits (exactly-once); a failure rolls back all three together.
-  -- payload/txn (the whole member document) go only to the quarantine, where they are needed for replay;
-  -- STG_REDEMPTION no longer repeats the document on every transaction row.
+  -- payload/txn (the whole member document) go only to the quarantine, where they are needed for replay, so
+  -- STG_REDEMPTION does not repeat the document on every transaction row.
   -- Subqueries instead of a WITH clause: the multi-table INSERT documentation shows a plain subquery.
   INSERT ALL
     WHEN 1 = 1 THEN INTO STG.STG_REDEMPTION
@@ -59,7 +59,7 @@ BEGIN
     f.value:partner::STRING                                               AS partner,
     -- Checked on the text, then cast: a positive whole number of at most 12 digits with no sign, leading zero or
     -- decimal point. Rejects 12.0, 12.5, 12.001, -5, 0, 012 and 1000000000000, exactly like skypoints MILES_PATTERN.
-    -- (TRY_TO_NUMBER(..., 38, 2) rounded 12.001 to 12.00 and accepted 12.0.)
+    -- Not TRY_TO_NUMBER(..., 38, 2): it would round 12.001 to 12.00 and accept 12.0.
     -- Not verified on Snowflake: how VARIANT renders a JSON 12.0 as STRING. If it renders '12', that value would be
     -- accepted here while Python rejects it; check with SELECT PARSE_JSON('{"m":12.0}'):m::STRING.
     IFF(REGEXP_LIKE(TRIM(f.value:miles_redeemed::STRING), '[1-9][0-9]{0,11}'),
